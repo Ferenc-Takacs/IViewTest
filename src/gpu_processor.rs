@@ -159,19 +159,20 @@ impl ImageProcessor {
         image_sampler: &wgpu::Sampler
     ) {
         let new_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Main Bind Group"),
+            label: Some("Update Bind Group"),
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(image_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(image_sampler) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(image_sampler) }, // Ez legyen a képé
                 wgpu::BindGroupEntry { binding: 2, resource: self.params_buffer.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&self.lut_texture_view) },
                 wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&self.lut_sampler) },
             ],
         });
-        // Mutexen keresztül írjuk be az új bind groupot
+
         let mut mg = self.main_bind_group.lock().unwrap();
         *mg = Some(new_bind_group);
+        
     }
 
     // A te 6x33-as rácsaidat alakítja át 33x33x33-as 3D textúrává
@@ -535,30 +536,27 @@ impl egui_wgpu::CallbackTrait for ImageCallback {
         render_pass: &mut wgpu::RenderPass<'static>,
         callback_resources: &egui_wgpu::CallbackResources,
     ) {
-        // Itt nyerjük vissza a korábban regisztrált ImageProcessor-t
         if let Some(processor) = callback_resources.get::<Arc<ImageProcessor>>() {
-            
-            // Beállítjuk a te pipeline-odat
-            render_pass.set_pipeline(&processor.pipeline);
-            
-            // Ha van érvényes BindGroup (kép + lut + params), kirajzoljuk
-            let mg_lock = processor.main_bind_group.lock().unwrap();
-            
-            if let Some(bind_group) = &*mg_lock {
-                render_pass.set_bind_group(0, bind_group, &[]);
-                
-                // Beállítjuk a vágási területet az egui által megadott téglalapra
-                render_pass.set_viewport(
-                    info.viewport.left(),
-                    info.viewport.top(),
-                    info.viewport.width(),
-                    info.viewport.height(),
-                    0.0,
-                    1.0,
-                );
-                
-                // Kirajzoljuk a 3 vertexet (ami a shaderben a teljes képernyőt lefedi)
-                render_pass.draw(0..3, 0..1);
+            if let Ok(mg_lock) = processor.main_bind_group.lock() {
+                if let Some(bind_group) = &*mg_lock {
+                    render_pass.set_pipeline(&processor.pipeline);
+                    render_pass.set_bind_group(0, bind_group, &[]);
+
+                    // JAVÍTÁS: A viewport pontos beállítása pixels_per_point alapján
+                    let ppp = info.pixels_per_point;
+                    let rect = info.viewport; // Ez már az abszolút pixel koordináta az ablakban
+                    
+                    render_pass.set_viewport(
+                        rect.left(),
+                        rect.top(),
+                        rect.width(),
+                        rect.height(),
+                        0.0,
+                        1.0,
+                    );
+
+                    render_pass.draw(0..3, 0..1);
+                }
             }
         }
     }
