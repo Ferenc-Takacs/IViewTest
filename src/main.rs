@@ -141,6 +141,94 @@ impl ColorSettings {
             rotate: Rotate::Rotate0,
         }
     }
+
+    fn apply_hsv_settings(self, rgb: [f32; 3] ) -> [f32; 3] {
+        let mut hsv = Self::rgb_to_hsv(rgb);
+
+        let shift = self.hue_shift / 360.0;
+        hsv[0] = (hsv[0] + shift).rem_euclid(1.0); // Biztonságos körbefordulás Rustban
+
+        // Saturation tolása: 0.0 az alap, -1.0 a szürke, 1.0 a dupla szaturáció
+        if self.saturation > 0.0 {
+            hsv[1] = hsv[1] + (1.0 - hsv[1]) * self.saturation;
+        } else {
+            hsv[1] = hsv[1] * (1.0 + self.saturation);
+        }
+
+        Self::hsv_to_rgb(hsv)
+    }
+
+    fn convert(self, color: &mut [f32; 3] ) {
+        if self.invert {
+            *color = [1.0 - color[0], 1.0 - color[1], 1.0 - color[2]];
+        }
+        *color = self.apply_hsv_settings(*color);
+        for channel in color.iter_mut() {
+            *channel += self.brightness;
+            let factor = (1.015 * (self.contrast + 1.0)) / (1.015 - self.contrast);
+            *channel = factor * (*channel - 0.5) + 0.5;
+            *channel = channel.powf(1.0 / self.gamma);
+            *channel = channel.clamp(0.0, 1.0);
+        }
+        if !self.show_r { color[0] = 0.0 };
+        if !self.show_g { color[1] = 0.0 };
+        if !self.show_b { color[2] = 0.0 };
+    }
+
+    fn rgb_to_hsv(rgb: [f32; 3]) -> [f32; 3] {
+        let r = rgb[0];
+        let g = rgb[1];
+        let b = rgb[2];
+
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let delta = max - min;
+
+        let mut h = 0.0;
+        let s = if max == 0.0 { 0.0 } else { delta / max };
+        let v = max;
+
+        if delta != 0.0 {
+            if max == r {
+                h = (g - b) / delta + (if g < b { 6.0 } else { 0.0 });
+            } else if max == g {
+                h = (b - r) / delta + 2.0;
+            } else {
+                h = (r - g) / delta + 4.0;
+            }
+            h /= 6.0; // Normalizálás 0.0 - 1.0 közé
+        }
+
+        [h, s, v]
+    }
+
+    fn hsv_to_rgb(hsv: [f32; 3]) -> [f32; 3] {
+        let h = hsv[0];
+        let s = hsv[1];
+        let v = hsv[2];
+        if s <= 0.0 {
+            // Ha a telítettség 0, akkor a szín a szürke árnyalata (v)
+            return [v, v, v];
+        }
+        // A színkört 6 szektorra osztjuk (0-tól 5-ig)
+        // A modulo 1.0 biztosítja, hogy a 1.0 feletti értékek is körbeforduljanak
+        let hh = (h % 1.0) * 6.0;
+        let i = hh.floor() as i32;
+        let ff = hh - hh.floor(); // A szektoron belüli relatív pozíció
+
+        let p = v * (1.0 - s);
+        let q = v * (1.0 - (s * ff));
+        let t = v * (1.0 - (s * (1.0 - ff)));
+        match i {
+            0 => [v, t, p],
+            1 => [q, v, p],
+            2 => [p, v, t],
+            3 => [p, q, v],
+            4 => [t, p, v],
+            _ => [v, p, q], // Az 5. szektor és biztonsági fallback
+        }
+    }
+
 }
 
 #[derive(Clone)]
@@ -185,20 +273,7 @@ impl Lut4ColorSettings {
                     let g_f = g as f32 / (self.size - 1) as f32;
                     let b_f = b as f32 / (self.size - 1) as f32;
                     let mut color = [r_f, g_f, b_f];
-                    if colset.invert {
-                        color = [1.0 - color[0], 1.0 - color[1], 1.0 - color[2]];
-                    }
-                    color = apply_hsv_settings(color, colset.hue_shift, colset.saturation);
-                    for channel in color.iter_mut() {
-                        *channel += colset.brightness;
-                        let factor = (1.015 * (colset.contrast + 1.0)) / (1.015 - colset.contrast);
-                        *channel = factor * (*channel - 0.5) + 0.5;
-                        *channel = channel.powf(1.0 / colset.gamma);
-                        *channel = channel.clamp(0.0, 1.0);
-                    }
-                    if !colset.show_r { color[0] = 0.0 };
-                    if !colset.show_g { color[1] = 0.0 };
-                    if !colset.show_b { color[2] = 0.0 };
+                    colset.convert(&mut color);
                     self.data[idx  ] = (color[0] * 255.0) as u8;
                     self.data[idx+1] = (color[1] * 255.0) as u8;
                     self.data[idx+2] = (color[2] * 255.0) as u8;
@@ -271,75 +346,6 @@ impl Lut4ColorSettings {
 }
 
 
-fn apply_hsv_settings(rgb: [f32; 3], hue_shift_deg: f32, saturation: f32) -> [f32; 3] {
-    let mut hsv = rgb_to_hsv(rgb);
-
-    let shift = hue_shift_deg / 360.0;
-    hsv[0] = (hsv[0] + shift).rem_euclid(1.0); // Biztonságos körbefordulás Rustban
-
-    // Saturation tolása: 0.0 az alap, -1.0 a szürke, 1.0 a dupla szaturáció
-    if saturation > 0.0 {
-        hsv[1] = hsv[1] + (1.0 - hsv[1]) * saturation;
-    } else {
-        hsv[1] = hsv[1] * (1.0 + saturation);
-    }
-
-    hsv_to_rgb(hsv)
-}
-
-fn rgb_to_hsv(rgb: [f32; 3]) -> [f32; 3] {
-    let r = rgb[0];
-    let g = rgb[1];
-    let b = rgb[2];
-
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let delta = max - min;
-
-    let mut h = 0.0;
-    let s = if max == 0.0 { 0.0 } else { delta / max };
-    let v = max;
-
-    if delta != 0.0 {
-        if max == r {
-            h = (g - b) / delta + (if g < b { 6.0 } else { 0.0 });
-        } else if max == g {
-            h = (b - r) / delta + 2.0;
-        } else {
-            h = (r - g) / delta + 4.0;
-        }
-        h /= 6.0; // Normalizálás 0.0 - 1.0 közé
-    }
-
-    [h, s, v]
-}
-
-fn hsv_to_rgb(hsv: [f32; 3]) -> [f32; 3] {
-    let h = hsv[0];
-    let s = hsv[1];
-    let v = hsv[2];
-    if s <= 0.0 {
-        // Ha a telítettség 0, akkor a szín a szürke árnyalata (v)
-        return [v, v, v];
-    }
-    // A színkört 6 szektorra osztjuk (0-tól 5-ig)
-    // A modulo 1.0 biztosítja, hogy a 1.0 feletti értékek is körbeforduljanak
-    let hh = (h % 1.0) * 6.0;
-    let i = hh.floor() as i32;
-    let ff = hh - hh.floor(); // A szektoron belüli relatív pozíció
-
-    let p = v * (1.0 - s);
-    let q = v * (1.0 - (s * ff));
-    let t = v * (1.0 - (s * (1.0 - ff)));
-    match i {
-        0 => [v, t, p],
-        1 => [q, v, p],
-        2 => [p, v, t],
-        3 => [p, q, v],
-        4 => [t, p, v],
-        _ => [v, p, q], // Az 5. szektor és biztonsági fallback
-    }
-}
 
 /*fn apply_lut(img: &mut image::RgbaImage, lut: &[[u8; 256]; 3]) {
     for pixel in img.pixels_mut() {
