@@ -5,6 +5,7 @@ use crate::ColorSettings;
 use std::sync::Arc;
 use std::sync::Mutex;
 //use image::DynamicImage;
+const _: &str = include_str!("image_processor.wgsl");
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -44,6 +45,375 @@ impl GpuParams {
         }
     }
 }
+///////////////////////////////////////////////////////////////////////////////////
+
+
+pub fn create_identity_lut_image() -> Vec<u8> {
+    let size = 33;
+    // 33 darab 33x33-as blokk egymás mellett: szélesség = 33 * 33 = 1089
+    let width = size * size; 
+    let height = size;
+    let mut data = vec![0u8; width * height * 4];
+
+    for z in 0..size { // Kék rétegek (0..32)
+        for y in 0..size { // Zöld (függőleges)
+            for x in 0..size { // Piros (vízszintes a blokkon belül)
+                let r = (x as f32 / (size - 1) as f32 * 255.0) as u8;
+                let g = (y as f32 / (size - 1) as f32 * 255.0) as u8;
+                let b = (z as f32 / (size - 1) as f32 * 255.0) as u8;
+
+                // Kiszámoljuk a pixel helyét a 1089x33-as képen
+                let px = (z * size + x) * 4;
+                let py = y * width * 4;
+                let idx = py + px;
+
+                data[idx] = r;
+                data[idx + 1] = g;
+                data[idx + 2] = b;
+                data[idx + 3] = 255;
+            }
+        }
+    }
+    data
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct ColorSettings {
+    gamma: f32,
+    contrast: f32,
+    brightness: f32,
+    hue_shift: f32,
+    saturation: f32,
+    invert: u32,       // u32-t használunk bool helyett a shader kompatibilitás miatt
+    show_r: u32,
+    show_g: u32,
+    show_b: u32,
+    _padding: [u32; 3], // A 16 bájtos igazítás miatt érdemes kitölteni
+}
+
+fn work_stream () {
+    
+    // colorsetting buffer
+    let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Color Settings Uniform Buffer"),
+        size: std::mem::size_of::<ColorSettings>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    // ... a bind_group többi része (texture_view-k) után:
+    wgpu::BindGroupEntry {
+        binding: 2,
+        resource: params_buffer.as_entire_binding(),
+    },
+
+
+    // referencia kép létrehozása, és betöltése.
+    let lut_size = 33;
+    let identity_data = create_identity_lut_image();
+
+    let identity_lut_texture = device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("Identity_LUT_Base"),
+            size: wgpu::Extent3d {
+                width: lut_size * lut_size, // 1089
+                height: lut_size,           // 33
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        },
+        wgpu::util::TextureDataOrder::LayerMajor,
+        &identity_data,
+    );
+
+    // konvertált kép buffer allokálása
+    let processed_lut_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Processed_LUT_Result"),
+        size: wgpu::Extent3d {
+            width: 1089,
+            height: 33,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    
+    // program 
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("LUT Compute Shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("lut_processor.wgsl").into()),
+    });
+
+    let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("LUT Compute Pipeline"),
+        layout: None, // Automatikus layout
+        module: &shader,
+        entry_point: Some("main"), // 2026-ban ez már lehet Option
+        compilation_options: Default::default(),
+        cache: None,
+    });
+
+    // Bind Group a két textúrához és a bufferekhez
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Compute Bind Group"),
+        layout: &compute_pipeline.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&identity_view) },
+            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&processed_view) },
+            wgpu::BindGroupEntry { binding: 2, resource: params_buffer.as_entire_binding() },
+        ],
+    });
+
+}
+
+fn csuszka() {
+    
+    // Ezt hívd meg a compute_pass indítása előtt:
+    queue.write_buffer(
+        &params_buffer, 
+        0, 
+        bytemuck::bytes_of(colset) // A 'colset' a ColorSettings példányod
+    );
+    
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { 
+            label: Some("LUT Calculation"),
+            timestamp_writes: None,
+        });
+        compute_pass.set_pipeline(&compute_pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+        
+        // 1089x33 pixel lefedése 16x16-os munkacsoportokkal
+        // (1089/16 felfelé kerekítve = 69, 33/16 felfelé kerekítve = 3)
+        compute_pass.dispatch_workgroups(69, 3, 1);
+    }
+    queue.submit(Some(encoder.finish()));
+}
+
+fn aaa(){
+    // encoder.begin_compute_pass(...) befejezése után:
+    encoder.copy_texture_to_buffer(
+        wgpu::ImageCopyTexture {
+            texture: &processed_lut_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::ImageCopyBuffer {
+            buffer: &staging_buffer,
+            layout: wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width as u32),
+                rows_per_image: Some(height as u32),
+            },
+        },
+        wgpu::Extent3d {
+            width: width as u32,
+            height: height as u32,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    queue.submit(Some(encoder.finish()));
+}
+
+pub fn download_lut(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Vec<u8> {
+    let buffer_slice = buffer.slice(..);
+
+    // 1. Kérjük a hozzáférést (aszinkron)
+    let (tx, rx) = std::sync::mpsc::channel();
+    buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+        tx.send(result).unwrap();
+    });
+
+    // 2. Megvárjuk, amíg a GPU végez (Maintain::Wait kényszeríti a befejezést)
+    device.poll(wgpu::Maintain::Wait);
+
+    if let Ok(Ok(_)) = rx.recv() {
+        // 3. Adatok másolása a Rust-ba
+        let data = buffer_slice.get_mapped_range().to_vec();
+        
+        // 4. Fontos: unmap-olni kell a buffert, hogy a GPU újra használhassa!
+        drop(data); // Előbb dobjuk a nézetet
+        buffer.unmap();
+        
+        return buffer_slice.get_mapped_range().to_vec(); // Visszaadjuk az adatokat
+    }
+    vec![]
+}
+
+pub fn update_animation_frame(queue: &wgpu::Queue, texture: &wgpu::Texture, new_frame: &egui::ColorImage) {
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        new_frame.as_raw(),
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * new_frame.width() as u32),
+            rows_per_image: Some(new_frame.height() as u32),
+        },
+        wgpu::Extent3d {
+            width: new_frame.width() as u32,
+            height: new_frame.height() as u32,
+            depth_or_array_layers: 1,
+        },
+    );
+}
+
+CPU: Módosítod a csúszkát.
+GPU: Compute Shader pillanatok alatt átszámolja a 1089x33-as táblát.
+GPU: copy_texture_to_buffer átteszi az eredményt a staging bufferbe.
+CPU: A download_lut függvénnyel kiveszed a friss bájtokat.
+App: Ezt a Vec<u8>-at használod fel a fő kép megjelenítéséhez (mint friss 3D LUT).
+
+    // Az update() függvényben:
+    if is_animation_playing && last_frame_elapsed {
+        let next_frame = animation.get_next_frame();
+        
+        // 1. Feltöltjük az új kockát a GPU-ra
+        update_animation_frame(&render_state.queue, &self.main_image_texture, &next_frame);
+        
+        // 2. Ha változtak a színek is, frissítjük a LUT-ot a Compute Shaderrel
+        if self.settings_dirty {
+            self.run_lut_compute_pass(render_state); 
+            self.settings_dirty = false;
+        }
+        
+        // 3. Kérjük az egui-t, hogy rajzoljon (repaint), így látszik az új frame
+        ctx.request_repaint();
+    }
+
+
+///////////////////////////////////////////////////////////////////
+// Ez villámgyors: csak egy uniform buffert ír és elindítja a compute shadert
+queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&gpu_settings));
+
+let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+{
+    let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
+    compute_pass.set_pipeline(&self.lut_compute_pipeline);
+    compute_pass.set_bind_group(0, &self.lut_bind_group, &[]);
+    // 33x33x33 rácspont feldolgozása (munkacsoportokra osztva)
+    compute_pass.dispatch_workgroups(33, 33, 33);
+}
+queue.submit(Some(encoder.finish()));
+
+
+
+pub fn process_to_cpu(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    processor: &ImageProcessor,
+    source_view: &wgpu::TextureView,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
+    // 1. Létrehozunk egy céltextúrát a GPU-n
+    let target_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("Output Texture"),
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+
+    // 2. Létrehozunk egy Buffert, amibe a GPU bele tudja másolni az eredményt (olvasható a CPU-nak)
+    let u32_size = std::mem::size_of::<u32>() as u32;
+    let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Output Buffer"),
+        size: (u32_size * width * height) as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    // 3. Renderelés a láthatatlan textúrára
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    {
+        let view = target_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+            })],
+            ..Default::default()
+        });
+        
+        rp.set_pipeline(&processor.pipeline);
+        // Itt frissíteni kell a bind group-ot a forrás képpel (source_view)
+        // ... set_bind_group ...
+        rp.draw(0..3, 0..1);
+    }
+
+    // 4. MÁSOLÁS: Textúra -> Buffer
+    encoder.copy_texture_to_buffer(
+        wgpu::ImageCopyTexture {
+            texture: &target_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::ImageCopyBuffer {
+            buffer: &output_buffer,
+            layout: wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+        },
+        wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+    );
+
+    queue.submit(Some(encoder.finish()));
+
+    // 5. Buffer kiolvasása (szinkronizálás a CPU-val)
+    let buffer_slice = output_buffer.slice(..);
+    buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
+    device.poll(wgpu::Maintain::Wait); // Megvárjuk a GPU-t
+
+    let data = buffer_slice.get_mapped_range().to_vec();
+    data // Itt a nyers RGBA pixelhalmaz!
+}
+
+pub struct LutGenerator {
+    pub pipeline: wgpu::RenderPipeline,
+    pub identity_texture: wgpu::Texture, // A fix 2D báziskép
+    pub target_lut_texture: wgpu::Texture, // Ebbe rajzol a GPU
+}
+
+impl LutGenerator {
+    pub fn update(&self, device: &wgpu::Device, queue: &wgpu::Queue, settings: &ColorSettings) {
+        // 1. Paraméterek feltöltése a GPU-ra
+        queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(settings));
+
+        // 2. Render Pass indítása a 'target_lut_texture'-re
+        // ... (standard wgpu render pass) ...
+        
+        // Ezután a 'target_lut_texture' már a friss, 
+        // korrigált színeket tartalmazza 3D vagy 2D formában.
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////////
 
 /*fn calculate_2d_coords_from_3d(r: usize, g: usize, b: usize) -> ( usize , usize ) {
     let size = 33;
@@ -537,26 +907,25 @@ impl egui_wgpu::CallbackTrait for ImageCallback {
         callback_resources: &egui_wgpu::CallbackResources,
     ) {
         if let Some(processor) = callback_resources.get::<Arc<ImageProcessor>>() {
-            if let Ok(mg_lock) = processor.main_bind_group.lock() {
-                if let Some(bind_group) = &*mg_lock {
-                    render_pass.set_pipeline(&processor.pipeline);
-                    render_pass.set_bind_group(0, bind_group, &[]);
+            let mg_lock = processor.main_bind_group.lock().unwrap();
+            if let Some(bind_group) = &*mg_lock {
+                render_pass.set_pipeline(&processor.pipeline);
+                render_pass.set_bind_group(0, bind_group, &[]);
 
-                    // JAVÍTÁS: A viewport pontos beállítása pixels_per_point alapján
-                    let ppp = info.pixels_per_point;
-                    let rect = info.viewport; // Ez már az abszolút pixel koordináta az ablakban
-                    
-                    render_pass.set_viewport(
-                        rect.left(),
-                        rect.top(),
-                        rect.width(),
-                        rect.height(),
-                        0.0,
-                        1.0,
-                    );
+                // A viewport beállítása a tényleges képernyőpixel-helyre
+                let ppp = info.pixels_per_point;
+                let clip_rect = info.clip_rect; 
+                
+                render_pass.set_viewport(
+                    clip_rect.min.x * ppp,
+                    clip_rect.min.y * ppp,
+                    clip_rect.width() * ppp,
+                    clip_rect.height() * ppp,
+                    0.0,
+                    1.0,
+                );
 
-                    render_pass.draw(0..3, 0..1);
-                }
+                render_pass.draw(0..3, 0..1);
             }
         }
     }
