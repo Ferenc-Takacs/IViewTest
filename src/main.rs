@@ -31,7 +31,7 @@ use std::fs;
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use std::sync::Arc;
+//use std::sync::Arc;
 use webp::Encoder;
 
 fn main() -> eframe::Result<()> {
@@ -210,45 +210,57 @@ impl Lut4ColorSettings {
     }
     
     fn apply_lut_pixel(&self, pix : & mut image::Rgba<u8>) {
-        let mut rm = 0;
-        let parts = 256 / (self.size-1);
+        let parts = 256 / (self.size-1); // 8
         
-        let r0 = (pix[0] as usize) / parts;
-        let ra = (pix[0] as usize) - r0 * parts;
-        let rb = parts - 1 - ra;
-        let r1 =  r0 + 1;
+        let red_0 = (pix[0] as usize) / parts;          // 0 - 31
+        let red_1 =  red_0 + 1;                         // 1 - 32
+        let red_a = (pix[0] as usize) - red_0 * parts;  // 0 - 7
+        let red_b = parts - 1 - red_a;                  // 7 - 0
 
-        let g0 = (pix[1] as usize) / parts;
-        let ga = (pix[1] as usize) - g0 * parts;
-        let gb = parts - 1 - ga;
-        let g1 =  g0 + 1;
+        let gre_0 = (pix[1] as usize) / parts;
+        let gre_1 =  gre_0 + 1;
+        let gre_a = (pix[1] as usize) - gre_0 * parts;
+        let gre_b = parts - 1 - gre_a;
         
-        let b0 = (pix[2] as usize) / parts;
-        let ba = (pix[2] as usize) - b0 * parts;
-        let bb = parts - 1 - ba;
-        let b1 =  b0 + 1;
+        let blu_0 = (pix[2] as usize) / parts;
+        let blu_1 =  blu_0 + 1;
+        let blu_a = (pix[2] as usize) - blu_0 * parts;
+        let blu_b = parts - 1 - blu_a;
         
-        let idx000  = (((((r0 * self.size) + ra + g0)  * self.size) + ga + b0) + bb) * 4;
-        let idx001  = (((((r0 * self.size) + ra + g0)  * self.size) + ga + b1) + bb) * 4;
-        let idx010  = (((((r0 * self.size) + ra + g1)  * self.size) + ga + b0) + bb) * 4;
-        let idx011  = (((((r0 * self.size) + ra + g1)  * self.size) + ga + b1) + bb) * 4;
-        let idx100  = (((((r1 * self.size) + ra + g0)  * self.size) + ga + b0) + bb) * 4;
-        let idx101  = (((((r1 * self.size) + ra + g0)  * self.size) + ga + b1) + bb) * 4;
-        let idx110  = (((((r1 * self.size) + ra + g1)  * self.size) + ga + b0) + bb) * 4;
-        let idx111  = (((((r1 * self.size) + ra + g1)  * self.size) + ga + b1) + bb) * 4;
+        let idx000  = ((((blu_0 * self.size) + gre_0)  * self.size) + red_0) * 4;
+        let idx001  = ((((blu_0 * self.size) + gre_0)  * self.size) + red_1) * 4;
+        let idx010  = ((((blu_0 * self.size) + gre_1)  * self.size) + red_0) * 4;
+        let idx011  = ((((blu_0 * self.size) + gre_1)  * self.size) + red_1) * 4;
+        let idx100  = ((((blu_1 * self.size) + gre_0)  * self.size) + red_0) * 4;
+        let idx101  = ((((blu_1 * self.size) + gre_0)  * self.size) + red_1) * 4;
+        let idx110  = ((((blu_1 * self.size) + gre_1)  * self.size) + red_0) * 4;
+        let idx111  = ((((blu_1 * self.size) + gre_1)  * self.size) + red_1) * 4;
         
-        pix[0] = (((rb*gb*bb)*self.data[idx000]as usize + (rb*gb*ba)*self.data[idx001]as usize +
-                   (rb*ga*bb)*self.data[idx010]as usize + (rb*ga*ba)*self.data[idx011]as usize + 
-                   (ra*gb*bb)*self.data[idx100]as usize + (ra*gb*ba)*self.data[idx101]as usize +
-                   (ra*ga*bb)*self.data[idx110]as usize + (ra*ga*ba)*self.data[idx111]as usize) / (parts*parts*parts*8)) as u8;
-        pix[1] = ((self.data[idx000+1]as usize*(rb*gb*bb) + self.data[idx001+1]as usize*(rb*gb*ba) +
-                   self.data[idx010+1]as usize*(rb*ga*bb) + self.data[idx011+1]as usize*(rb*ga*ba) + 
-                   self.data[idx100+1]as usize*(ra*gb*bb) + self.data[idx101+1]as usize*(ra*gb*ba) +
-                   self.data[idx110+1]as usize*(ra*ga*bb) + self.data[idx111+1]as usize*(ra*ga*ba)) / (parts*parts*parts*8)) as u8;
-        pix[2] = ((self.data[idx000+2]as usize*(rb*gb*bb) + self.data[idx001+2]as usize*(rb*gb*ba) +
-                   self.data[idx010+2]as usize*(rb*ga*bb) + self.data[idx011+2]as usize*(rb*ga*ba) + 
-                   self.data[idx100+2]as usize*(ra*gb*bb) + self.data[idx101+2]as usize*(ra*gb*ba) +
-                   self.data[idx110+2]as usize*(ra*ga*bb) + self.data[idx111+2]as usize*(ra*ga*ba)) / (parts*parts*parts*8)) as u8;
+        let div = (parts-1)*(parts-1)*(parts-1);
+        pix[0] = ( (self.data[idx000  ]as usize * (red_b*gre_b*blu_b) +
+                    self.data[idx001  ]as usize * (red_b*gre_b*blu_a) +
+                    self.data[idx010  ]as usize * (red_b*gre_a*blu_b) +
+                    self.data[idx011  ]as usize * (red_b*gre_a*blu_a) + 
+                    self.data[idx100  ]as usize * (red_a*gre_b*blu_b) +
+                    self.data[idx101  ]as usize * (red_a*gre_b*blu_a) +
+                    self.data[idx110  ]as usize * (red_a*gre_a*blu_b) +
+                    self.data[idx111  ]as usize * (red_a*gre_a*blu_a) + div/2) / div) as u8;
+        pix[1] = ( (self.data[idx000+1]as usize * (red_b*gre_b*blu_b) +
+                    self.data[idx001+1]as usize * (red_b*gre_b*blu_a) +
+                    self.data[idx010+1]as usize * (red_b*gre_a*blu_b) +
+                    self.data[idx011+1]as usize * (red_b*gre_a*blu_a) +
+                    self.data[idx100+1]as usize * (red_a*gre_b*blu_b) +
+                    self.data[idx101+1]as usize * (red_a*gre_b*blu_a) +
+                    self.data[idx110+1]as usize * (red_a*gre_a*blu_b) +
+                    self.data[idx111+1]as usize * (red_a*gre_a*blu_a) + div/2) / div) as u8;
+        pix[2] = ( (self.data[idx000+2]as usize * (red_b*gre_b*blu_b) +
+                    self.data[idx001+2]as usize * (red_b*gre_b*blu_a) +
+                    self.data[idx010+2]as usize * (red_b*gre_a*blu_b) +
+                    self.data[idx011+2]as usize * (red_b*gre_a*blu_a) +
+                    self.data[idx100+2]as usize * (red_a*gre_b*blu_b) +
+                    self.data[idx101+2]as usize * (red_a*gre_b*blu_a) +
+                    self.data[idx110+2]as usize * (red_a*gre_a*blu_b) +
+                    self.data[idx111+2]as usize * (red_a*gre_a*blu_a) + div/2) / div) as u8;
     }
     
     fn apply_lut(&self, img: &mut image::RgbaImage) {
@@ -562,7 +574,7 @@ struct ImageViewer {
     current_frame: usize, // Hol tartunk?
     pub last_frame_time: std::time::Instant,
     anim_data: Option<AnimatedImage>,
-    current_gpu_view : Option<wgpu::TextureView>,
+    //current_gpu_view : Option<wgpu::TextureView>,
 }
 
 impl Default for ImageViewer {
@@ -610,7 +622,7 @@ impl Default for ImageViewer {
             current_frame: 0,    // Hol tartunk?
             last_frame_time: std::time::Instant::now(),
             anim_data: None,
-            current_gpu_view :None,
+            //current_gpu_view :None,
         }
     }
 }
