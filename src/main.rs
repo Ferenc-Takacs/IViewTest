@@ -18,8 +18,8 @@ TODO
 // disable terminal window beyond graphic window in release version
 //#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//mod gpu_processor;
-//use gpu_processor::ImageCallback;
+mod gpu_colors;
+use gpu_colors::GpuInterface;
 
 use arboard::Clipboard;
 use directories::ProjectDirs;
@@ -58,7 +58,8 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             let mut app = ImageViewer::default();
             app.load_settings();
-
+            app.init();
+            
             if let Some(path) = start_image {
                 if clipboard {
                     // az előző könyvtárt vesszük
@@ -110,55 +111,54 @@ fn save_clipboard_image() -> Option<PathBuf> {
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 struct ColorSettings {
+    is_default: bool,
     gamma: f32,
     contrast: f32,
     brightness: f32,
-    sharpen_amount: f32, // -1.0 .. 5.0
-    sharpen_radius: f32, // 0.1 .. 3.0
     hue_shift: f32,      // -180.0 .. 180.0 (fok)
     saturation: f32,     // -1.0 .. 1.0
     show_r: bool,
     show_g: bool,
     show_b: bool,
     invert: bool,
-    rotate: Rotate,
+    sharpen_amount: f32, // -1.0 .. 5.0 // realy image setting
+    sharpen_radius: f32, // 0.1 .. 3.0 // realy image setting
+    rotate: Rotate, // realy image setting
 }
 
 impl ColorSettings {
     fn default() -> Self {
         Self {
+            is_default : true,
             gamma: 1.0,
             contrast: 0.0,
             brightness: 0.0,
-            sharpen_amount: 0.0, // -1.0 .. 5.0
-            sharpen_radius: 0.1, // 0.1 .. 3.0
             hue_shift: 0.0,      // -180.0 .. 180.0 (fok)
             saturation: 0.0,     // -1.0 .. 1.0
             show_r: true,
             show_g: true,
             show_b: true,
             invert: false,
+            sharpen_amount: 0.0, // -1.0 .. 5.0
+            sharpen_radius: 0.1, // 0.1 .. 3.0
             rotate: Rotate::Rotate0,
         }
     }
-
-    fn apply_hsv_settings(self, rgb: [f32; 3] ) -> [f32; 3] {
-        let mut hsv = Self::rgb_to_hsv(rgb);
-
-        let shift = self.hue_shift / 360.0;
-        hsv[0] = (hsv[0] + shift).rem_euclid(1.0); // Biztonságos körbefordulás Rustban
-
-        // Saturation tolása: 0.0 az alap, -1.0 a szürke, 1.0 a dupla szaturáció
-        if self.saturation > 0.0 {
-            hsv[1] = hsv[1] + (1.0 - hsv[1]) * self.saturation;
-        } else {
-            hsv[1] = hsv[1] * (1.0 + self.saturation);
-        }
-
-        Self::hsv_to_rgb(hsv)
+    
+    pub fn is_setted(&self) -> bool {
+        let is_default = 
+            (self.gamma - 1.0).abs() < 0.001 &&
+            self.contrast.abs() < 0.001 &&
+            self.brightness.abs() < 0.001 &&
+            self.hue_shift.abs() < 0.001 &&
+            self.saturation.abs() < 0.001 &&
+            self.show_r && self.show_g && self.show_b &&
+            !self.invert;
+        !is_default
     }
 
-    fn convert(self, color: &mut [f32; 3] ) {
+    fn convert(&self, color: &mut [f32; 3] ) {
+        if !self.is_default  { return; }
         if self.invert {
             *color = [1.0 - color[0], 1.0 - color[1], 1.0 - color[2]];
         }
@@ -173,6 +173,22 @@ impl ColorSettings {
         if !self.show_r { color[0] = 0.0 };
         if !self.show_g { color[1] = 0.0 };
         if !self.show_b { color[2] = 0.0 };
+    }
+
+    fn apply_hsv_settings(&self, rgb: [f32; 3] ) -> [f32; 3] {
+        let mut hsv = Self::rgb_to_hsv(rgb);
+
+        let shift = self.hue_shift / 360.0;
+        hsv[0] = (hsv[0] + shift).rem_euclid(1.0); // Biztonságos körbefordulás Rustban
+
+        // Saturation tolása: 0.0 az alap, -1.0 a szürke, 1.0 a dupla szaturáció
+        if self.saturation > 0.0 {
+            hsv[1] = hsv[1] + (1.0 - hsv[1]) * self.saturation;
+        } else {
+            hsv[1] = hsv[1] * (1.0 + self.saturation);
+        }
+
+        Self::hsv_to_rgb(hsv)
     }
 
     fn rgb_to_hsv(rgb: [f32; 3]) -> [f32; 3] {
@@ -228,7 +244,6 @@ impl ColorSettings {
             _ => [v, p, q], // Az 5. szektor és biztonsági fallback
         }
     }
-
 }
 
 #[derive(Clone)]
@@ -258,6 +273,12 @@ impl Lut4ColorSettings {
         Self { size, data }
     }
     
+    fn any_lut() -> Self {
+        let mut data = Vec::with_capacity(1);
+        data.push(255);
+        Self { size: 0, data }
+    }
+    
     fn default() -> Lut4ColorSettings {
         let mut s = Lut4ColorSettings::new();
         s.update_lut(&ColorSettings::default());
@@ -266,6 +287,7 @@ impl Lut4ColorSettings {
 
     fn update_lut(&mut self, colset: &ColorSettings) {
         let mut idx = 0;
+        colset.is_setted();
         for b in 0..self.size {
             for g in 0..self.size {
                 for r in 0..self.size {
@@ -345,16 +367,6 @@ impl Lut4ColorSettings {
     }
 }
 
-
-
-/*fn apply_lut(img: &mut image::RgbaImage, lut: &[[u8; 256]; 3]) {
-    for pixel in img.pixels_mut() {
-        pixel[0] = lut[0][pixel[0] as usize]; // R
-        pixel[1] = lut[1][pixel[1] as usize]; // G
-        pixel[2] = lut[2][pixel[2] as usize]; // B
-        // Az Alpha (pixel[3]) marad érintetlen
-    }
-}*/
 
 fn get_exif(path: &Path) -> Option<exif::Exif> {
     if let Ok(file) = std::fs::File::open(path) {
@@ -580,7 +592,7 @@ struct ImageViewer {
     current_frame: usize, // Hol tartunk?
     pub last_frame_time: std::time::Instant,
     anim_data: Option<AnimatedImage>,
-    //current_gpu_view : Option<wgpu::TextureView>,
+    gpu_interface : Option<gpu_colors::GpuInterface>,
 }
 
 impl Default for ImageViewer {
@@ -628,12 +640,19 @@ impl Default for ImageViewer {
             current_frame: 0,    // Hol tartunk?
             last_frame_time: std::time::Instant::now(),
             anim_data: None,
-            //current_gpu_view :None,
+            gpu_interface : None,
         }
     }
 }
 
 impl ImageViewer {
+    
+    fn init( &mut self ) {
+        if let Some(interface) = gpu_colors::GpuInterface::gpu_init() {
+            self.gpu_interface = Some(interface);
+        }
+    }
+    
     fn load_animation(&mut self, ctx: &egui::Context, path: &PathBuf) {
         let Ok(file) = std::fs::File::open(path) else {
             return;
@@ -771,8 +790,17 @@ impl ImageViewer {
             _ => {}
         }
         let mut rgba_image = processed_img.to_rgba8();
-        if let Some(lut) = &self.lut {
-            lut.apply_lut(&mut rgba_image);
+        if self.color_settings.is_setted() {
+            if let Some(interface) = &self.gpu_interface {
+                let w = rgba_image.dimensions().0;
+                let h = rgba_image.dimensions().1;
+                interface.generate_image(&mut rgba_image.clone().into_raw(), w , h);
+            }
+            else {
+                if let Some(lut) = &self.lut {
+                    lut.apply_lut(&mut rgba_image);
+                }
+            }
         }
         *img = image::DynamicImage::ImageRgba8(rgba_image);
     }
@@ -1027,11 +1055,19 @@ impl ImageViewer {
     fn review(&mut self, ctx: &egui::Context, coloring: bool, new_rotate: bool) {
         if let Some(mut img) = self.original_image.clone() {
             if coloring {
-                let lut_ref = self.lut.get_or_insert_with(Lut4ColorSettings::default);
-                lut_ref.update_lut(&self.color_settings);
+                if let Some(interface) = &self.gpu_interface {
+                    self.lut = Some(Lut4ColorSettings::any_lut());
+                }
+                else {
+                    let lut_ref = self.lut.get_or_insert_with(Lut4ColorSettings::default);
+                    lut_ref.update_lut(&self.color_settings);
+                }
             } else {
                 self.lut = None;
                 self.color_settings = ColorSettings::default();
+            }
+            if let Some(interface) = &self.gpu_interface {
+                interface.change_colorcorrection(&self.color_settings);
             }
 
             let max_gpu_size = ctx.input(|i| i.max_texture_side) as u32;
@@ -1058,8 +1094,15 @@ impl ImageViewer {
             self.image_size.x = rgba_image.dimensions().0 as f32;
             self.image_size.y = rgba_image.dimensions().1 as f32;
             self.resize = self.image_size.x / w_orig as f32;
-            if let Some(lut) = &self.lut {
-                lut.apply_lut(&mut rgba_image);
+            if self.color_settings.is_setted() {
+                if let Some(interface) = &self.gpu_interface {
+                    interface.generate_image(&mut rgba_image.clone().into_raw(),rgba_image.dimensions().0,rgba_image.dimensions().1);
+                }
+                else {
+                    if let Some(lut) = &self.lut {
+                        lut.apply_lut(&mut rgba_image);
+                    }
+                }
             }
 
             let pixel_data = rgba_image.into_raw();
@@ -2671,32 +2714,32 @@ impl eframe::App for ImageViewer {
             let mut changed = false;
             let mut dialog_copy = self.color_correction_dialog;
             egui::Window::new("Color corrections")
-                .open(&mut dialog_copy) // Bezáró gomb (X) kezelése
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.label(egui::RichText::new("Global Corrections").strong());
-                    changed |= ui.add( egui::Slider::new(&mut self.color_settings.gamma, 0.1..=3.0).text("Gamma"), ).changed();
-                    changed |= ui.add( egui::Slider::new(&mut self.color_settings.contrast, -1.0..=1.0) .text("Contrass"), ).changed();
-                    ui.separator();
+            .open(&mut dialog_copy) // Bezáró gomb (X) kezelése
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(egui::RichText::new("Global Corrections").strong());
+                changed |= ui.add( egui::Slider::new(&mut self.color_settings.gamma, 0.1..=3.0).text("Gamma"), ).changed();
+                changed |= ui.add( egui::Slider::new(&mut self.color_settings.contrast, -1.0..=1.0) .text("Contrass"), ).changed();
+                ui.separator();
 
-                    // --- HSV (Színvilág) ---
-                    ui.label(egui::RichText::new("HSV / Color Shift").strong());
-                    changed |= ui.add(egui::Slider::new(&mut self.color_settings.hue_shift, -180.0..=180.0).text("Hue Shift")).changed();
-                    changed |= ui.add(egui::Slider::new(&mut self.color_settings.saturation, -1.0..=1.0).text("Saturation")).changed();
-                    changed |= ui.add( egui::Slider::new(&mut self.color_settings.brightness, -1.0..=1.0).text("Brightness"), ) .changed();
+                // --- HSV (Színvilág) ---
+                ui.label(egui::RichText::new("HSV / Color Shift").strong());
+                changed |= ui.add(egui::Slider::new(&mut self.color_settings.hue_shift, -180.0..=180.0).text("Hue Shift")).changed();
+                changed |= ui.add(egui::Slider::new(&mut self.color_settings.saturation, -1.0..=1.0).text("Saturation")).changed();
+                changed |= ui.add( egui::Slider::new(&mut self.color_settings.brightness, -1.0..=1.0).text("Brightness"), ) .changed();
 
-                    ui.separator();
+                ui.separator();
 
-                    // --- Élesítés / Blur (GPU előkészítés) ---
-                    ui.label(egui::RichText::new("Sharpen (amount>0) & Blur (amount<0)").strong());
-                    ui.horizontal(|ui| {
+                // --- Élesítés / Blur (GPU előkészítés) ---
+                ui.label(egui::RichText::new("Sharpen (amount>0) & Blur (amount<0)").strong());
+                ui.horizontal(|ui| {
                     changed |= ui.add(egui::Slider::new(&mut self.color_settings.sharpen_amount, -1.0..=5.0).text("Amount")).changed();
                     if ui.button("⟲").on_hover_text("Reset Amount").clicked() {
                         self.color_settings.sharpen_amount = 0.0;
                         changed = true;
                     }
                 });
-                
+            
                 ui.horizontal(|ui| {
                     changed |= ui.add(egui::Slider::new(&mut self.color_settings.sharpen_radius, 0.1..=3.0).text("Radius")).changed();
                     if ui.button("⟲").on_hover_text("Reset Radius").clicked() {
