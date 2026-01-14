@@ -105,6 +105,7 @@ struct FilterSettings {
 @group(1) @binding(2) var t_lut: texture_3d<f32>;       // A már generált 3D LUT
 @group(1) @binding(3) var<uniform> f: FilterSettings;
 @group(1) @binding(4) var t_out: texture_storage_2d<rgba8unorm, write>;
+@group(1) @binding(5) var<uniform> colset_apply: GpuColorSettings;
 
 @compute @workgroup_size(16, 16)
 fn apply_effects(@builtin(global_invocation_id) id: vec3<u32>) {

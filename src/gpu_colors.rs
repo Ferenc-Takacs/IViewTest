@@ -333,7 +333,7 @@ impl GpuInterface {
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
             cpass.set_pipeline(&self.pipe_apply);
-            cpass.set_bind_group(0, &self.bind_group_gen, &[]);
+            //cpass.set_bind_group(0, &self.bind_group_gen, &[]);
             cpass.set_bind_group(1, &bind_group_apply, &[]); // Megjegyzés: a shaderben ez a @group(1)
             
             let workgroup_x = (width + 15) / 16;
