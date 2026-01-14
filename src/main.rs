@@ -19,7 +19,7 @@ TODO
 //#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod gpu_colors;
-use gpu_colors::GpuInterface;
+//use gpu_colors::GpuInterface;
 
 use arboard::Clipboard;
 use directories::ProjectDirs;
@@ -49,6 +49,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_icon(icon) // Itt állítjuk be az ikont
             .with_inner_size([800.0, 600.0]),
+            renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
 
@@ -58,7 +59,6 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             let mut app = ImageViewer::default();
             app.load_settings();
-            app.init();
             
             if let Some(path) = start_image {
                 if clipboard {
@@ -647,11 +647,13 @@ impl Default for ImageViewer {
 
 impl ImageViewer {
     
-    fn init( &mut self ) {
+    /*fn init( &mut self ) {
+        println!("before gpu_init");
         if let Some(interface) = gpu_colors::GpuInterface::gpu_init() {
             self.gpu_interface = Some(interface);
+            println!("gpu_interface");
         }
-    }
+    }*/
     
     fn load_animation(&mut self, ctx: &egui::Context, path: &PathBuf) {
         let Ok(file) = std::fs::File::open(path) else {
@@ -1055,7 +1057,7 @@ impl ImageViewer {
     fn review(&mut self, ctx: &egui::Context, coloring: bool, new_rotate: bool) {
         if let Some(mut img) = self.original_image.clone() {
             if coloring {
-                if let Some(interface) = &self.gpu_interface {
+                if let Some(_interface) = &self.gpu_interface {
                     self.lut = Some(Lut4ColorSettings::any_lut());
                 }
                 else {
@@ -1065,9 +1067,6 @@ impl ImageViewer {
             } else {
                 self.lut = None;
                 self.color_settings = ColorSettings::default();
-            }
-            if let Some(interface) = &self.gpu_interface {
-                interface.change_colorcorrection(&self.color_settings);
             }
 
             let max_gpu_size = ctx.input(|i| i.max_texture_side) as u32;
@@ -1093,6 +1092,11 @@ impl ImageViewer {
             let mut rgba_image = img.to_rgba8();
             self.image_size.x = rgba_image.dimensions().0 as f32;
             self.image_size.y = rgba_image.dimensions().1 as f32;
+            
+            if let Some(interface) = &self.gpu_interface {
+                interface.change_colorcorrection(&self.color_settings, self.image_size.x, self.image_size.y);
+            }
+
             self.resize = self.image_size.x / w_orig as f32;
             if self.color_settings.is_setted() {
                 if let Some(interface) = &self.gpu_interface {
@@ -1419,14 +1423,25 @@ impl eframe::App for ImageViewer {
         self.save_settings();
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+
+        // Csak az első futáskor inicializálunk, amikor már van frame és GPU
+        if self.gpu_interface.is_none() {
+            if let Some(render_state) = frame.wgpu_render_state() {
+                println!("Most már van GPU állapota, indulhat a gpu_init...");
+                if let Some(interface) = gpu_colors::GpuInterface::gpu_init(render_state) {
+                    self.gpu_interface = Some(interface);
+                    println!("GPU INTERFÉSZ KÉSZ!");
+                }
+            }
+        }
 
         /*if let Some(_tex) = &self.texture {
-         }
-         else { // start without image
-             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-             return;
-        }*/
+        }
+        else { // start without image
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        } */
 
         if self.anim_playing {
             if let Some(anim) = &self.anim_data {
@@ -2161,7 +2176,7 @@ impl eframe::App for ImageViewer {
         });
         if let Some(path) = dropped_file {
             self.open_image(ctx, &path.to_path_buf(), true);
-            println!("Fájl behúzva: {:?}", path);
+            //println!("Fájl behúzva: {:?}", path);
         }
 
         egui::CentralPanel::default()
