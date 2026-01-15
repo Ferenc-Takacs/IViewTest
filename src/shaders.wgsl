@@ -74,21 +74,10 @@ fn rgb_to_hsv(c: vec3<f32>) -> vec3<f32> {
 }
 
 fn hsv_to_rgb(c: vec3<f32>) -> vec3<f32> {
-    let h = c.x * 6.0;
-    let i = floor(h);
-    let f = h - i;
-    let p = c.z * (1.0 - c.y);
-    let q = c.z * (1.0 - c.y * f);
-    let t = c.z * (1.0 - c.y * (1.0 - f));
-    let m = i32(i) % 6;
-    if (m == 0) { return vec3(c.z, t, p); }
-    if (m == 1) { return vec3(q, c.z, p); }
-    if (m == 2) { return vec3(p, c.z, t); }
-    if (m == 3) { return vec3(p, q, c.z); }
-    if (m == 4) { return vec3(t, p, c.z); }
-    return vec3(c.z, p, q);
+    let k = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    let p = abs(fract(c.xxx + k.xyz) * 6.0 - k.www);
+    return c.z * mix(k.xxx, clamp(p - k.xxx, vec3(0.0), vec3(1.0)), c.y);
 }
-
 
 // 2. ELJÁRÁS: Kép feldolgozása
 
@@ -109,40 +98,45 @@ struct FilterSettings {
 
 @compute @workgroup_size(16, 16)
 fn apply_effects(@builtin(global_invocation_id) id: vec3<u32>) {
-    let dims_u32  = textureDimensions(t_src);
-    
-    if (id.x >= dims_u32 .x || id.y >= dims_u32 .y) { return; }
+    let dims_u32 = textureDimensions(t_src);
+    if (id.x >= dims_u32.x || id.y >= dims_u32.y) { return; }
 
-    let dims = vec2<i32>(dims_u32);
     let coords = vec2<i32>(id.xy);
-
+    let dims = vec2<i32>(dims_u32);
     let min_limit = vec2<i32>(0, 0);
     let max_limit = dims - vec2<i32>(1, 1);
 
-    // 1. ALAP PIXEL ÉS SZŰRÉS (Blur/Sharpen)
-    // Egy egyszerű 3x3-as kernel példa a Sharpen-hez
-    var center = textureLoad(t_src, coords, 0).rgb;
-    var final_color = center;
+    // 1. ALAP PIXEL ÉS KÖRNYEZETE
+    let center = textureLoad(t_src, coords, 0).rgb;
+    
+    // Szomszédok betöltése (Blur-höz és Sharpen-hez is kellhet)
+    let left   = textureLoad(t_src, clamp(coords + vec2<i32>(-1, 0), min_limit, max_limit), 0).rgb;
+    let right  = textureLoad(t_src, clamp(coords + vec2<i32>(1, 0), min_limit, max_limit), 0).rgb;
+    let top    = textureLoad(t_src, clamp(coords + vec2<i32>(0, -1), min_limit, max_limit), 0).rgb;
+    let bottom = textureLoad(t_src, clamp(coords + vec2<i32>(0, 1), min_limit, max_limit), 0).rgb;
 
-    if (f.sharpen_amount > 0.0) {
-        let left = textureLoad(t_src, clamp(coords + vec2<i32>(-1, 0), min_limit, max_limit), 0).rgb;
-        let right = textureLoad(t_src, clamp(coords + vec2<i32>(1, 0), min_limit, max_limit), 0).rgb;
-        let top = textureLoad(t_src, clamp(coords + vec2<i32>(0, -1), min_limit, max_limit), 0).rgb;
-        let bottom = textureLoad(t_src, clamp(coords + vec2<i32>(0, 1), min_limit, max_limit), 0).rgb;
-        
-        // Laplaciana alapú élesítés
-        let laplacian = center * 4.0 - (left + right + top + bottom);
-        final_color = final_color + laplacian * f.sharpen_amount;
+    var processed_color = center;
+
+    // --- BLUR (Egyszerű 3x3 Box Blur) ---
+    if (f.blur_radius > 0.0) {
+        // A blur_radius-szal skálázzuk a szomszédok súlyát
+        let edge_weight = clamp(f.blur_radius, 0.0, 1.0) * 0.25;
+        let center_weight = 1.0 - (edge_weight * 4.0);
+        processed_color = center * center_weight + (left + right + top + bottom) * edge_weight;
     }
 
-    // 2. LUT ALKALMAZÁSA (Színkorrekció)
-    // A szűrt színt koordinátaként használjuk a 3D LUT-ban.
-    // A textureSampleLevel hardveresen végzi a 33->256 interpolációt.
-    let lut_coords = clamp(final_color, vec3(0.0), vec3(1.0));
+    // --- SHARPEN (Élesítés az aktuális színen) ---
+    if (f.sharpen_amount > 0.0) {
+        let laplacian = processed_color * 4.0 - (left + right + top + bottom);
+        processed_color = processed_color + laplacian * f.sharpen_amount;
+    }
+
+    // 2. LUT ALKALMAZÁSA
+    // 0.5/33.0 eltolás a pontosabb színekért (fél-pixel korrekció)
+    let lut_size = 33.0;
+    let lut_coords = clamp(processed_color, vec3(0.0), vec3(1.0)) * ((lut_size - 1.0) / lut_size) + (0.5 / lut_size);
     let corrected = textureSampleLevel(t_lut, s_linear, lut_coords, 0.0).rgb;
 
     // 3. MENTÉS
     textureStore(t_out, coords, vec4<f32>(corrected, 1.0));
 }
-
-
