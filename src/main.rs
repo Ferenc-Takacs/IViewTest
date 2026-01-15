@@ -96,7 +96,7 @@ fn save_clipboard_image() -> Option<PathBuf> {
     if let Ok(image_data) = clipboard.get_image() {
         let temp_path = env::temp_dir().join("rust_image_viewer_clipboard.png");
         // Konvertálás arboard formátumból image formátumba
-        if let Some(buf) = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
+        if let Some(buf) = image::ImageBuffer::<image::Rgba<u8>, std::vec::Vec<u8>>::from_raw(
             image_data.width as u32,
             image_data.height as u32,
             image_data.bytes.into_owned(),
@@ -544,9 +544,25 @@ struct Resolution {
 }
 
 pub struct AnimatedImage {
-    pub frames: Vec<egui::TextureHandle>, // GPU textúrák
+    //pub anim_frames: Vec<egui::TextureHandle>, // GPU textúrák // old
+    pub anim_frames: Vec<image::DynamicImage>,
     pub delays: Vec<std::time::Duration>, // Időzítések
     pub total_frames: usize,
+}
+
+fn color_image_to_dynamic(color_image: egui::ColorImage) -> image::DynamicImage {
+    let size = color_image.size;
+    // Flatten Color32 (RGBA) pixels into a Vec<u8>
+    let pixels = color_image.pixels.iter()
+        .flat_map(|p| [p.r(), p.g(), p.b(), p.a()])
+        .collect::<Vec<u8>>();
+
+    // Create an RgbaImage buffer
+    let buffer = image::RgbaImage::from_raw(size[0] as u32, size[1] as u32, pixels)
+        .expect("Failed to create image buffer");
+
+    // Wrap in DynamicImage
+    image::DynamicImage::ImageRgba8(buffer)
 }
 
 struct ImageViewer {
@@ -655,7 +671,7 @@ impl ImageViewer {
         }
     }*/
     
-    fn load_animation(&mut self, ctx: &egui::Context, path: &PathBuf) {
+    fn load_animation(&mut self, path: &PathBuf) {
         let Ok(file) = std::fs::File::open(path) else {
             return;
         };
@@ -675,10 +691,11 @@ impl ImageViewer {
         };
 
         if let Ok(frames) = frames_result {
-            let mut tex_frames = Vec::new();
+            //let mut frames = Vec::new();
+            let mut images = Vec::new();
             let mut delays = Vec::new();
 
-            for (i, frame) in frames.into_iter().enumerate() {
+            for (_i, frame) in frames.into_iter().enumerate() {
                 // Késleltetés kinyerése (ms)
                 let (num, den) = frame.delay().numer_denom_ms();
                 let delay_ms = if den == 0 { 100 } else { (num / den).max(20) }; // Biztonsági minimum 10ms
@@ -690,19 +707,21 @@ impl ImageViewer {
                     [rgba.width() as usize, rgba.height() as usize],
                     &rgba.into_raw(),
                 );
+                let img = color_image_to_dynamic(color_image);
+                images.push(img);
 
-                let handle = ctx.load_texture(
+                /*let handle = ctx.load_texture(
                     format!("anim_frame_{}", i),
                     color_image,
                     egui::TextureOptions::LINEAR,
                 );
-                tex_frames.push(handle);
+                frames.push(handle);*/
             }
 
-            if !tex_frames.is_empty() {
-                let total = tex_frames.len();
+            if !images.is_empty() {
+                let total = images.len();
                 self.anim_data = Some(AnimatedImage {
-                    frames: tex_frames,
+                    anim_frames: images,
                     delays,
                     total_frames: total,
                 });
@@ -1056,125 +1075,72 @@ impl ImageViewer {
 
     fn review(&mut self, ctx: &egui::Context, coloring: bool, new_rotate: bool) {
         if let Some(mut img) = self.original_image.clone() {
-            if coloring {
-                if let Some(_interface) = &self.gpu_interface {
-                    self.lut = Some(Lut4ColorSettings::any_lut());
-                }
-                else {
-                    let lut_ref = self.lut.get_or_insert_with(Lut4ColorSettings::default);
-                    lut_ref.update_lut(&self.color_settings);
-                }
-            } else {
-                self.lut = None;
-                self.color_settings = ColorSettings::default();
-            }
-
-            let max_gpu_size = ctx.input(|i| i.max_texture_side) as u32;
-            let w_orig = img.width();
-            if img.width() > max_gpu_size || img.height() > max_gpu_size {
-                img = img.resize(
-                    max_gpu_size,
-                    max_gpu_size,
-                    image::imageops::FilterType::Triangle,
-                );
-            }
-
-            match self.color_settings.rotate {
-                Rotate::Rotate90 => img = img.rotate90(),
-                Rotate::Rotate180 => img = img.rotate180(),
-                Rotate::Rotate270 => img = img.rotate270(),
-                _ => {}
-            }
-            if new_rotate {
-                self.first_appear = 1;
-            }
-
-            let mut rgba_image = img.to_rgba8();
-            self.image_size.x = rgba_image.dimensions().0 as f32;
-            self.image_size.y = rgba_image.dimensions().1 as f32;
-            
-            if let Some(interface) = &self.gpu_interface {
-                interface.change_colorcorrection(&self.color_settings, self.image_size.x, self.image_size.y);
-            }
-
-            self.resize = self.image_size.x / w_orig as f32;
-            if self.color_settings.is_setted() {
-                if let Some(interface) = &self.gpu_interface {
-                    interface.generate_image(&mut rgba_image.clone().into_raw(),rgba_image.dimensions().0,rgba_image.dimensions().1);
-                }
-                else {
-                    if let Some(lut) = &self.lut {
-                        lut.apply_lut(&mut rgba_image);
-                    }
-                }
-            }
-
-            let pixel_data = rgba_image.into_raw();
-            let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                [self.image_size.x as usize, self.image_size.y as usize],
-                &pixel_data,
-            );
-            
-            self.texture = Some(ctx.load_texture("kep", color_image, Default::default()));
+            self.review_core(ctx, &mut img, coloring, new_rotate)
         }
     }
     
-    /*fn review_gpu(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame , color_image : &egui::ColorImage){
-        
-        let device = &render_state.device;
-        let queue = &render_state.queue;
+    fn review_core(&mut self, ctx: &egui::Context, img: & mut image::DynamicImage, coloring: bool, new_rotate: bool) {
+        if coloring {
+            if let Some(_interface) = &self.gpu_interface {
+                self.lut = Some(Lut4ColorSettings::any_lut());
+            }
+            else {
+                let lut_ref = self.lut.get_or_insert_with(Lut4ColorSettings::default);
+                lut_ref.update_lut(&self.color_settings);
+            }
+        } else {
+            self.lut = None;
+            self.color_settings = ColorSettings::default();
+        }
 
-        // 1. Létrehozzuk a wgpu textúrát a képből
-        let size = wgpu::Extent3d {
-            width: color_image.width() as u32,
-            height: color_image.height() as u32,
-            depth_or_array_layers: 1,
-        };
-
-        let new_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Main Image Texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm, // Fontos: az egui ColorImage RGBA8
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        // 2. Adatok feltöltése
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &new_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            color_image.as_raw(), // A nyers pixeladatok
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * color_image.width() as u32),
-                rows_per_image: Some(color_image.height() as u32),
-            },
-            size,
-        );
-
-        let view = new_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        // 3. Bind Group frissítése a processzorban
-        if let Some(processor) = &mut self.image_processor {
-            processor.update_bind_group(
-                device,
-                &view,
-                &processor.lut_sampler, // Használhatod a meglévő samplert
+        let max_gpu_size = ctx.input(|i| i.max_texture_side) as u32;
+        let w_orig = img.width();
+        if img.width() > max_gpu_size || img.height() > max_gpu_size {
+            *img = img.resize(
+                max_gpu_size,
+                max_gpu_size,
+                image::imageops::FilterType::Triangle,
             );
         }
 
-        // Ezt a view-t érdemes elmenteni az App-ba a self.texture helyett/mellé
-        self.current_gpu_view = Some(view);
-        ctx.request_repaint();
-    }*/
+        match self.color_settings.rotate {
+            Rotate::Rotate90 => *img = img.rotate90(),
+            Rotate::Rotate180 => *img = img.rotate180(),
+            Rotate::Rotate270 => *img = img.rotate270(),
+            _ => {}
+        }
+        if new_rotate {
+            self.first_appear = 1;
+        }
 
+        let mut rgba_image = img.to_rgba8();
+        self.image_size.x = rgba_image.dimensions().0 as f32;
+        self.image_size.y = rgba_image.dimensions().1 as f32;
+        
+        if let Some(interface) = &self.gpu_interface {
+            interface.change_colorcorrection(&self.color_settings, self.image_size.x, self.image_size.y);
+        }
+
+        self.resize = self.image_size.x / w_orig as f32;
+        if self.color_settings.is_setted() {
+            if let Some(interface) = &self.gpu_interface {
+                interface.generate_image(&mut rgba_image.clone().into_raw(),rgba_image.dimensions().0,rgba_image.dimensions().1);
+            }
+            else {
+                if let Some(lut) = &self.lut {
+                    lut.apply_lut(&mut rgba_image);
+                }
+            }
+        }
+
+        let pixel_data = rgba_image.into_raw();
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+            [self.image_size.x as usize, self.image_size.y as usize],
+            &pixel_data,
+        );
+        
+        self.texture = Some(ctx.load_texture("kep", color_image, Default::default()));
+    }
 
     fn load_image(&mut self, ctx: &egui::Context, reopen: bool) {
         let Some(filepath) = self.image_full_path.clone() else {
@@ -1317,7 +1283,7 @@ impl ImageViewer {
             // Csak GIF és WebP esetén próbáljuk meg az animációt betölteni
             if self.image_format == SaveFormat::Gif || self.image_format == SaveFormat::Webp {
                 // Meghívjuk a segédfüggvényt (lásd lentebb)
-                self.load_animation(ctx, &filepath);
+                self.load_animation(&filepath);
                 if self.anim_data.is_some() {
                     self.is_animated = true;
                     self.anim_playing = true; // Automatikus lejátszás indul
@@ -1423,9 +1389,10 @@ impl eframe::App for ImageViewer {
         self.save_settings();
     }
 
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 
         // Csak az első futáskor inicializálunk, amikor már van frame és GPU
+        /* turn off temporary
         if self.gpu_interface.is_none() {
             if let Some(render_state) = frame.wgpu_render_state() {
                 println!("Most már van GPU állapota, indulhat a gpu_init...");
@@ -1435,6 +1402,7 @@ impl eframe::App for ImageViewer {
                 }
             }
         }
+        */
 
         /*if let Some(_tex) = &self.texture {
         }
@@ -1462,10 +1430,10 @@ impl eframe::App for ImageViewer {
                         self.last_frame_time = std::time::Instant::now();
 
                         // Textúra frissítése a megjelenítéshez
-                        self.texture = Some(anim.frames[self.current_frame].clone());
-
+                        self.review_core(ctx,&mut anim.anim_frames[self.current_frame].clone(), false, false);
                         // Azonnali újrarajzolás a váltás után
                         ctx.request_repaint();
+                        
                     } else {
                         // Várunk a maradék időre
                         ctx.request_repaint_after(*delay - elapsed);
@@ -2145,7 +2113,10 @@ impl eframe::App for ImageViewer {
                         } else {
                             self.current_frame -= 1;
                         }
-                        self.texture = Some(anim.frames[self.current_frame].clone());
+                        // Textúra frissítése a megjelenítéshez
+                        self.review_core(ctx,&mut (anim.anim_frames[self.current_frame].clone()), false, false);
+                        // Azonnali újrarajzolás a váltás után
+                        ctx.request_repaint();
                     }
 
                     if ui.button("▶").clicked()
@@ -2153,8 +2124,14 @@ impl eframe::App for ImageViewer {
                     {
                         self.anim_playing = false;
                         if anim.total_frames > 0 {
-                            self.current_frame = (self.current_frame + 1) % anim.total_frames;
-                            self.texture = Some(anim.frames[self.current_frame].clone());
+                            
+                            // Textúra frissítése a megjelenítéshez
+                            self.review_core(ctx,&mut anim.anim_frames[self.current_frame].clone(), false, false);
+                            // Azonnali újrarajzolás a váltás után
+                            ctx.request_repaint();
+                            
+                            //self.current_frame = (self.current_frame + 1) % anim.total_frames;
+                            //self.texture = Some(anim.anim_frames[self.current_frame].clone());
                         }
                     }
                     ui.label(format!(

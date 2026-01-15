@@ -44,11 +44,13 @@ pub struct GpuInterface {
     filter_params_buffer: wgpu::Buffer,
     sampler: wgpu::Sampler,
     bind_group_gen: wgpu::BindGroup,
+    bind_group_apply_0: wgpu::BindGroup,
     bg_layout_apply: wgpu::BindGroupLayout,
     colset: ColorSettings,
 }
 
 impl GpuInterface {
+    ///////////////////////////////////////////////////////////////////////////
     pub fn gpu_init(render_state: &egui_wgpu::RenderState) -> Option<Self> {
         let device = render_state.device.clone();
         let queue = render_state.queue.clone();
@@ -183,27 +185,27 @@ impl GpuInterface {
         let view_processed = tex_processed_lut.create_view(&wgpu::TextureViewDescriptor::default());
 
         let bind_group_gen = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Gen LUT Bind Group"),
-            layout: &bg_layout_gen, // Ez az az explicit layout, amit az előbb adtunk hozzá
+            label: Some("Gen LUT Bind Group (Writable)"),
+            layout: &bg_layout_gen,
             entries: &[
-                // 0. binding: A színbeállítások uniform buffere
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: params_buffer.as_entire_binding(),
-                },
-                // 1. binding: Az alap (Identity) 3D textúra
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&view_identity),
-                },
-                // 2. binding: A kimeneti (számolt) 3D LUT textúra
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&view_processed),
-                },
+                wgpu::BindGroupEntry { binding: 0, resource: params_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view_identity) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&view_processed) },
             ],
         });
 
+        // ÚJ: Ez a bind group csak olvasásra, az Apply Effects Pipeline-hoz
+        let bind_group_apply_0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Apply Effects Bind Group 0 (Read-only)"),
+            layout: &bg_layout_gen,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: params_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view_identity) },
+                // FONTOS: Itt ugyanazt a view_processed-et adjuk át, de mivel a Pipeline 
+                // layoutjában ezt nem STORAGE-ként definiáljuk az apply-hoz, nem lesz ütközés.
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&view_processed) },
+            ],
+        });
 
         let bg_layout_apply = pipe_apply.get_bind_group_layout(1);
 
@@ -220,11 +222,56 @@ impl GpuInterface {
             filter_params_buffer,
             sampler,
             bind_group_gen, // Ezt is hozzá kell adni a struct-hoz!
+            bind_group_apply_0,
             bg_layout_apply, // Későbbi kép-bindinghoz
             colset: ColorSettings::default(),
         })
     }
+    
+    ///////////////////////////////////////////////////////////////////////////
+/*
+pub fn generate_lut_only(&self, colset: &ColorSettings) -> Vec<u8> {
+    let gpu_settings = GpuColorSettings::from(colset);
+    self.queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&gpu_settings));
 
+    let mut encoder = self.device.create_command_encoder(&Default::default());
+    {
+        let mut cpass = encoder.begin_compute_pass(&Default::default());
+        cpass.set_pipeline(&self.pipe_gen_lut);
+        cpass.set_bind_group(0, &self.bind_group_gen, &[]);
+        cpass.dispatch_workgroups(9, 9, 9);
+    }
+
+    // Másolás staging bufferbe (1089x33 méret)
+    encoder.copy_texture_to_buffer(
+        self.tex_processed_lut.as_image_copy(),
+        wgpu::ImageCopyBuffer {
+            buffer: &self.lut_staging_buffer,
+            layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(33 * 4), rows_per_image: Some(33) },
+        },
+        wgpu::Extent3d { width: 33, height: 33, depth_or_array_layers: 33 },
+    );
+
+    self.queue.submit(Some(encoder.finish()));
+    
+    // Letöltés (Poll + MapAsync) - Ahogy korábban megbeszéltük
+    self.download_buffer(&self.lut_staging_buffer) 
+}
+
+pub fn apply_effects_only(&self, img_data: &mut Vec<u8>, lut_data: &[u8], width: u32, height: u32) {
+    // 1. LUT feltöltése egy tiszta, csak OLVASHATÓ textúrába (nincs Storage flag!)
+    self.queue.write_texture(
+        self.tex_read_only_lut.as_image_copy(),
+        lut_data,
+        wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(33 * 4), rows_per_image: Some(33) },
+        wgpu::Extent3d { width: 33, height: 33, depth_or_array_layers: 33 },
+    );
+
+    // 2. Kép feltöltése, Compute Pass (pipe_apply), majd letöltés
+    // Itt a bind_group_apply-ban a tex_read_only_lut szerepel!
+}*/
+
+    ///////////////////////////////////////////////////////////////////////////
     /// Frissíti a GPU-n lévő 3D LUT-ot a megadott színbeállítások alapján.
      pub fn change_colorcorrection(&self, colset: &ColorSettings, width: f32, height: f32) {
 
@@ -270,6 +317,7 @@ impl GpuInterface {
 
         self.queue.submit(Some(encoder.finish()));
     }
+    ///////////////////////////////////////////////////////////////////////////
 
     pub fn generate_image(&self, img_data: &mut Vec<u8>, width: u32, height: u32) {
 
@@ -328,13 +376,16 @@ impl GpuInterface {
             ],
         });
 
-        // 5. Parancsok rögzítése
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
         {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
+            let mut cpass = encoder.begin_compute_pass(&Default::default());
             cpass.set_pipeline(&self.pipe_apply);
-            //cpass.set_bind_group(0, &self.bind_group_gen, &[]);
-            cpass.set_bind_group(1, &bind_group_apply, &[]); // Megjegyzés: a shaderben ez a @group(1)
+            
+            // Most már be van állítva a 0-ás index, de olyan BindGroup-pal, 
+            // ami nem okoz "conflicting usage" hibát (nincs STORAGE_READ_WRITE benne)
+            cpass.set_bind_group(0, &self.bind_group_apply_0, &[]); 
+            
+            cpass.set_bind_group(1, &bind_group_apply, &[]);
             
             let workgroup_x = (width + 15) / 16;
             let workgroup_y = (height + 15) / 16;
@@ -369,6 +420,7 @@ impl GpuInterface {
     }    
 
 }
+    ///////////////////////////////////////////////////////////////////////////
 
 fn create_3d_identity_data() -> Vec<u8> {
     let size = 33;
