@@ -1389,10 +1389,9 @@ impl eframe::App for ImageViewer {
         self.save_settings();
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
 
         // Csak az első futáskor inicializálunk, amikor már van frame és GPU
-        /* turn off temporary
         if self.gpu_interface.is_none() {
             if let Some(render_state) = frame.wgpu_render_state() {
                 println!("Most már van GPU állapota, indulhat a gpu_init...");
@@ -1402,7 +1401,6 @@ impl eframe::App for ImageViewer {
                 }
             }
         }
-        */
 
         /*if let Some(_tex) = &self.texture {
         }
@@ -1430,7 +1428,7 @@ impl eframe::App for ImageViewer {
                         self.last_frame_time = std::time::Instant::now();
 
                         // Textúra frissítése a megjelenítéshez
-                        self.review_core(ctx,&mut anim.anim_frames[self.current_frame].clone(), false, false);
+                        self.review_core(ctx,&mut anim.anim_frames[self.current_frame].clone(), true, false);
                         // Azonnali újrarajzolás a váltás után
                         ctx.request_repaint();
                         
@@ -2081,6 +2079,7 @@ impl eframe::App for ImageViewer {
                 }
                 ui.separator();
 
+                let mut frame_copy: Option<image::DynamicImage> = None;
                 if let Some(anim) = &self.anim_data {
                     let play_btn = if self.anim_playing {
                         "⏸ Stop"
@@ -2114,9 +2113,7 @@ impl eframe::App for ImageViewer {
                             self.current_frame -= 1;
                         }
                         // Textúra frissítése a megjelenítéshez
-                        self.review_core(ctx,&mut (anim.anim_frames[self.current_frame].clone()), false, false);
-                        // Azonnali újrarajzolás a váltás után
-                        ctx.request_repaint();
+                        frame_copy = Some(anim.anim_frames[self.current_frame].clone());
                     }
 
                     if ui.button("▶").clicked()
@@ -2126,9 +2123,7 @@ impl eframe::App for ImageViewer {
                         if anim.total_frames > 0 {
                             
                             // Textúra frissítése a megjelenítéshez
-                            self.review_core(ctx,&mut anim.anim_frames[self.current_frame].clone(), false, false);
-                            // Azonnali újrarajzolás a váltás után
-                            ctx.request_repaint();
+                            frame_copy = Some(anim.anim_frames[self.current_frame].clone());
                             
                             //self.current_frame = (self.current_frame + 1) % anim.total_frames;
                             //self.texture = Some(anim.anim_frames[self.current_frame].clone());
@@ -2139,6 +2134,10 @@ impl eframe::App for ImageViewer {
                         self.current_frame + 1,
                         anim.total_frames
                     ));
+                }
+                if let Some(mut frame) = frame_copy {
+                    self.review_core(ctx, &mut frame, true, false);
+                    ctx.request_repaint();
                 }
             });
         });
