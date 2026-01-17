@@ -1,5 +1,5 @@
 use eframe::wgpu;
-use crate::ColorSettings;
+use crate::colors::ColorSettings;
 //use wgpu::util::DeviceExt;
 use std::sync::Arc;
 
@@ -20,13 +20,14 @@ pub struct GpuColorSettings {
     pub show_r: u32,
     pub show_g: u32,
     pub show_b: u32,
-    pub _padding: [f32; 2], // 16 bájtos igazítás
+    pub oklab: u32,
+    pub _padding: u32, // 16 bájtos igazítás
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuFilterSettings {
-    pub blur_radius: f32,
+    pub sharpen_radius: f32,
     pub sharpen_amount: f32,
     pub image_width: f32,
     pub image_height: f32,
@@ -52,6 +53,13 @@ pub struct GpuInterface {
 impl GpuInterface {
     ///////////////////////////////////////////////////////////////////////////
     pub fn gpu_init(render_state: &egui_wgpu::RenderState) -> Option<Self> {
+        return None;
+        let limits = render_state.adapter.limits();
+        if limits.max_storage_textures_per_shader_stage < 1 {
+            eprintln!("Hiba: A GPU nem támogatja a Storage Texture-öket (VirtualBox/régi driver).");
+            return None;
+        }
+
         let device = render_state.device.clone();
         let queue = render_state.queue.clone();
 
@@ -135,7 +143,21 @@ impl GpuInterface {
             ],
         });
 
-        // --- 1. CSOPORT LAYOUT (Csak a képfeldolgozáshoz) ---
+        // 2. ÚJ layout az apply_effects 0-ás csoportjához (Csak a paramétereknek)
+        let bg_layout_apply_params = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Layout Group 0 - Apply Only"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry { 
+                    binding: 0, 
+                    visibility: wgpu::ShaderStages::COMPUTE, 
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, 
+                    count: None 
+                },
+                // A 1-es és 2-es bindingot NEM definiáljuk itt, mert az apply_effects nem használja őket!
+            ],
+        });        
+
+        // --- 1. CSOPORT LAYOUT (Képfeldolgozás) BŐVÍTÉSE ---
         let bg_layout_apply = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Layout Group 1"),
             entries: &[
@@ -144,6 +166,8 @@ impl GpuInterface {
                 wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D3, multisampled: false }, count: None },
                 wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
                 wgpu::BindGroupLayoutEntry { binding: 4, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::StorageTexture { access: wgpu::StorageTextureAccess::WriteOnly, format: wgpu::TextureFormat::Rgba8Unorm, view_dimension: wgpu::TextureViewDimension::D2 }, count: None },
+                // EZ HIÁNYZOTT: A colset_apply binding (5-ös)
+                wgpu::BindGroupLayoutEntry { binding: 5, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
             ],
         });
 
@@ -158,7 +182,7 @@ impl GpuInterface {
         // Layout a Kép alkalmazóhoz (0-ás ÉS 1-es csoport!)
         let layout_apply_img = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Layout Apply Image"),
-            bind_group_layouts: &[&bg_layout_gen, &bg_layout_apply],
+            bind_group_layouts: &[&bg_layout_apply_params, &bg_layout_apply],
             push_constant_ranges: &[],
         });
 
@@ -181,29 +205,22 @@ impl GpuInterface {
             cache: None,
         });
 
-        let view_identity = tex_identity.create_view(&wgpu::TextureViewDescriptor::default());
-        let view_processed = tex_processed_lut.create_view(&wgpu::TextureViewDescriptor::default());
-
+        // Helyes BindGroup létrehozás
         let bind_group_gen = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Gen LUT Bind Group (Writable)"),
+            label: Some("Bind Group Gen"),
             layout: &bg_layout_gen,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: params_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view_identity) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&view_processed) },
+                wgpu::BindGroupEntry { binding: 0, resource: params_buffer.as_entire_binding(), },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&tex_identity.create_view(&wgpu::TextureViewDescriptor::default()) ), },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&tex_processed_lut.create_view(&wgpu::TextureViewDescriptor::default()) ), },
             ],
         });
 
-        // ÚJ: Ez a bind group csak olvasásra, az Apply Effects Pipeline-hoz
         let bind_group_apply_0 = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Apply Effects Bind Group 0 (Read-only)"),
-            layout: &bg_layout_gen,
+            label: Some("Bind Group Apply 0 (Truly Params Only)"),
+            layout: &bg_layout_apply_params, // Az új, szűkített layout
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: params_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view_identity) },
-                // FONTOS: Itt ugyanazt a view_processed-et adjuk át, de mivel a Pipeline 
-                // layoutjában ezt nem STORAGE-ként definiáljuk az apply-hoz, nem lesz ütközés.
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&view_processed) },
             ],
         });
 
@@ -229,52 +246,8 @@ impl GpuInterface {
     }
     
     ///////////////////////////////////////////////////////////////////////////
-/*
-pub fn generate_lut_only(&self, colset: &ColorSettings) -> Vec<u8> {
-    let gpu_settings = GpuColorSettings::from(colset);
-    self.queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&gpu_settings));
-
-    let mut encoder = self.device.create_command_encoder(&Default::default());
-    {
-        let mut cpass = encoder.begin_compute_pass(&Default::default());
-        cpass.set_pipeline(&self.pipe_gen_lut);
-        cpass.set_bind_group(0, &self.bind_group_gen, &[]);
-        cpass.dispatch_workgroups(9, 9, 9);
-    }
-
-    // Másolás staging bufferbe (1089x33 méret)
-    encoder.copy_texture_to_buffer(
-        self.tex_processed_lut.as_image_copy(),
-        wgpu::ImageCopyBuffer {
-            buffer: &self.lut_staging_buffer,
-            layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(33 * 4), rows_per_image: Some(33) },
-        },
-        wgpu::Extent3d { width: 33, height: 33, depth_or_array_layers: 33 },
-    );
-
-    self.queue.submit(Some(encoder.finish()));
-    
-    // Letöltés (Poll + MapAsync) - Ahogy korábban megbeszéltük
-    self.download_buffer(&self.lut_staging_buffer) 
-}
-
-pub fn apply_effects_only(&self, img_data: &mut Vec<u8>, lut_data: &[u8], width: u32, height: u32) {
-    // 1. LUT feltöltése egy tiszta, csak OLVASHATÓ textúrába (nincs Storage flag!)
-    self.queue.write_texture(
-        self.tex_read_only_lut.as_image_copy(),
-        lut_data,
-        wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(33 * 4), rows_per_image: Some(33) },
-        wgpu::Extent3d { width: 33, height: 33, depth_or_array_layers: 33 },
-    );
-
-    // 2. Kép feltöltése, Compute Pass (pipe_apply), majd letöltés
-    // Itt a bind_group_apply-ban a tex_read_only_lut szerepel!
-}*/
-
-    ///////////////////////////////////////////////////////////////////////////
     /// Frissíti a GPU-n lévő 3D LUT-ot a megadott színbeállítások alapján.
      pub fn change_colorcorrection(&self, colset: &ColorSettings, width: f32, height: f32) {
-
         let gpu_settings = GpuColorSettings {
             setted: if colset.is_setted() { 1 } else { 0 },
             gamma: colset.gamma,
@@ -286,12 +259,13 @@ pub fn apply_effects_only(&self, img_data: &mut Vec<u8>, lut_data: &[u8], width:
             show_r: if colset.show_r { 1 } else { 0 },
             show_g: if colset.show_g { 1 } else { 0 },
             show_b: if colset.show_b { 1 } else { 0 },
-            _padding: [0.0; 2],
+            oklab: if colset.oklab { 1 } else { 0 },
+            _padding: 0,
         };
         self.queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&gpu_settings));
 
         let gpu_filter = GpuFilterSettings {
-            blur_radius: colset.sharpen_radius,
+            sharpen_radius: colset.sharpen_radius,
             sharpen_amount: colset.sharpen_amount,
             image_width: width,
             image_height: height,
@@ -319,7 +293,7 @@ pub fn apply_effects_only(&self, img_data: &mut Vec<u8>, lut_data: &[u8], width:
     }
     ///////////////////////////////////////////////////////////////////////////
 
-    pub fn generate_image(&self, img_data: &mut Vec<u8>, width: u32, height: u32) {
+    pub fn generate_image(&self, img_data: &mut [u8], width: u32, height: u32) {
 
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
 
@@ -354,15 +328,6 @@ pub fn apply_effects_only(&self, img_data: &mut Vec<u8>, lut_data: &[u8], width:
             view_formats: &[],
         });
 
-        // 3. Staging Buffer a letöltéshez
-        let output_buffer_size = (img_data.len()) as u64;
-        let staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Staging Buffer"),
-            size: output_buffer_size,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-
         // 4. Bind Group létrehozása a képfeldolgozáshoz
         let bind_group_apply = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Apply Bind Group"),
@@ -373,6 +338,7 @@ pub fn apply_effects_only(&self, img_data: &mut Vec<u8>, lut_data: &[u8], width:
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&self.tex_processed_lut.create_view(&Default::default())) },
                 wgpu::BindGroupEntry { binding: 3, resource: self.filter_params_buffer.as_entire_binding() }, // Feltételezve, hogy van ilyen buffer az initben
                 wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&tex_out.create_view(&Default::default())) },
+                wgpu::BindGroupEntry { binding: 5, resource: self.params_buffer.as_entire_binding() }, 
             ],
         });
 
@@ -392,12 +358,25 @@ pub fn apply_effects_only(&self, img_data: &mut Vec<u8>, lut_data: &[u8], width:
             cpass.dispatch_workgroups(workgroup_x, workgroup_y, 1);
         }
 
-        // Másolás: Textúra -> Buffer
+        let width_bytes = 4 * width;
+        let alignment = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // Ez a konstans 256
+        let padded_bytes_per_row = (width_bytes + alignment - 1) & !(alignment - 1);
+
+        let staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Staging Buffer"),
+            size: (padded_bytes_per_row * height) as u64, // A padded méretet használjuk
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
         encoder.copy_texture_to_buffer(
             tex_out.as_image_copy(),
             wgpu::ImageCopyBuffer {
                 buffer: &staging_buffer,
-                layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(4 * width), rows_per_image: Some(height) },
+                layout: wgpu::ImageDataLayout { 
+                    offset: 0, 
+                    bytes_per_row: Some(padded_bytes_per_row), // ITT A JAVÍTÁS
+                    rows_per_image: Some(height) },
             },
             size,
         );
@@ -413,7 +392,25 @@ pub fn apply_effects_only(&self, img_data: &mut Vec<u8>, lut_data: &[u8], width:
 
         if let Ok(Ok(())) = receiver.recv() {
             let data = buffer_slice.get_mapped_range();
-            img_data.copy_from_slice(&data);
+            
+            // 1. Számoljuk ki a sorok hosszát
+            let width_bytes = width as usize * 4;
+            // A padded_bytes_per_row-t ugyanúgy számold, mint a buffer létrehozásakor!
+            let align = 256;
+            let padded_bytes_per_row = (width_bytes + align - 1) & !(align - 1);
+
+            // 2. Soronkénti másolás (ez a lényeg!)
+            for y in 0..height as usize {
+                let gpu_start = y * padded_bytes_per_row;
+                let gpu_end = gpu_start + width_bytes;
+                
+                let cpu_start = y * width_bytes;
+                let cpu_end = cpu_start + width_bytes;
+                
+                // Csak a hasznos pixeladatokat másoljuk át a kiegészítés nélkül
+                img_data[cpu_start..cpu_end].copy_from_slice(&data[gpu_start..gpu_end]);
+            }
+
             drop(data);
             staging_buffer.unmap();
         }
