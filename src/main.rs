@@ -11,7 +11,7 @@ TODO
 */
 
 // disable terminal window beyond graphic window in release version
-//#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod gpu_colors;
 mod colors;
@@ -27,7 +27,6 @@ use std::fs;
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-//use std::sync::Arc;
 use webp::Encoder;
 
 fn main() -> eframe::Result<()> {
@@ -197,8 +196,10 @@ struct AppSettings {
     refit_reopen: bool,
     center: bool,
     fit_open: bool,
+    same_correction_open: bool,
     bg_style: BackgroundStyle,
     recent_files: Vec<PathBuf>,
+    use_gpu: bool,
 }
 
 impl Default for AppSettings {
@@ -211,8 +212,10 @@ impl Default for AppSettings {
             refit_reopen: false,
             center: true,
             fit_open: true,
+            same_correction_open: false,
             bg_style: BackgroundStyle::DarkBright,
             recent_files: Vec::new(),
+            use_gpu : true,
         }
     }
 }
@@ -296,6 +299,7 @@ struct ImageViewer {
     first_appear: u32,
     texture: Option<egui::TextureHandle>,
     original_image: Option<image::DynamicImage>,
+    rgba_image: Option<image::ImageBuffer<image::Rgba<u8>, Vec<u8>>>,
     image_size: egui::Vec2, // beolvasott kép mérete pixelben
     center: bool,           // igaz, ha középe tesszük az ablakot, egyébként a bal felső sarokba
     show_info: bool,
@@ -312,6 +316,7 @@ struct ImageViewer {
     show_about_window: bool,
     refit_reopen: bool,
     fit_open: bool,
+    same_correction_open: bool,
     exif: Option<exif::Exif>,
     save_original: bool,
     bg_style: BackgroundStyle,
@@ -326,8 +331,10 @@ struct ImageViewer {
     current_frame: usize, // Hol tartunk?
     pub last_frame_time: std::time::Instant,
     anim_data: Option<AnimatedImage>,
+    show_original_only: bool,
     gpu_interface : Option<gpu_colors::GpuInterface>,
     gpu_tried_init: bool,
+    use_gpu: bool,
 }
 
 impl Default for ImageViewer {
@@ -345,6 +352,7 @@ impl Default for ImageViewer {
             first_appear: 1,
             texture: None,
             original_image: None,
+            rgba_image: None,
             image_size: [800.0, 600.0].into(),
             center: false,
             show_info: false,
@@ -361,6 +369,7 @@ impl Default for ImageViewer {
             show_about_window: false,
             refit_reopen: false,
             fit_open: true,
+            same_correction_open: false,
             exif: None,
             save_original: false, //always set before use
             bg_style: BackgroundStyle::DarkBright,
@@ -375,8 +384,10 @@ impl Default for ImageViewer {
             current_frame: 0,    // Hol tartunk?
             last_frame_time: std::time::Instant::now(),
             anim_data: None,
+            show_original_only: false,
             gpu_interface : None,
             gpu_tried_init: false,
+            use_gpu: true,
         }
     }
 }
@@ -403,6 +414,8 @@ impl ImageViewer {
         };
 
         if let Ok(frames) = frames_result {
+            if frames.len() <= 1 { return; }
+            
             let mut images = Vec::new();
             let mut delays = Vec::new();
 
@@ -450,7 +463,9 @@ impl ImageViewer {
         self.config.magnify = self.magnify;
         self.config.refit_reopen = self.refit_reopen;
         self.config.center = self.center;
+        self.config.use_gpu = self.use_gpu;
         self.config.fit_open = self.fit_open;
+        self.config.same_correction_open = self.same_correction_open;
         self.config.bg_style = self.bg_style.clone();
         if let Ok(json) = serde_json::to_string_pretty(&self.config) {
             let _ = std::fs::write(&path, json);
@@ -467,7 +482,9 @@ impl ImageViewer {
                 self.magnify = settings.magnify;
                 self.refit_reopen = settings.refit_reopen;
                 self.center = settings.center;
+                self.use_gpu = settings.use_gpu;
                 self.fit_open = settings.fit_open;
+                self.same_correction_open = settings.same_correction_open;
                 self.bg_style = settings.bg_style;
                 self.config.recent_files = settings.recent_files;
                 self.recent_file_modified = true;
@@ -909,72 +926,83 @@ impl ImageViewer {
 
     fn review(&mut self, ctx: &egui::Context, coloring: bool, new_rotate: bool) {
         if let Some(mut img) = self.original_image.clone() {
-            if coloring {
-                if let Some(_interface) = &self.gpu_interface {
-                    //self.lut = Some(Lut4ColorSettings::any_lut()); // fake self.lut
-                }
-                else {
-                    let lut_ref = self.lut.get_or_insert_with(Lut4ColorSettings::default);
-                    lut_ref.update_lut(&self.color_settings);
-                    println!("update_lut");
-                }
-            } else {
-                self.lut = None;
-                self.color_settings = ColorSettings::default();
-                println!("default_lut");
-            }
-
-            let max_gpu_size = ctx.input(|i| i.max_texture_side) as u32;
-            let w_orig = img.width();
-            if img.width() > max_gpu_size || img.height() > max_gpu_size {
-                img = img.resize(
-                    max_gpu_size,
-                    max_gpu_size,
-                    image::imageops::FilterType::Triangle,
-                );
-            }
-
-            match self.color_settings.rotate {
-                Rotate::Rotate90 => img = img.rotate90(),
-                Rotate::Rotate180 => img = img.rotate180(),
-                Rotate::Rotate270 => img = img.rotate270(),
-                _ => {}
-            }
-            if new_rotate {
-                self.first_appear = 1;
-            }
-
-            let mut rgba_image = img.to_rgba8();
-            self.image_size.x = rgba_image.dimensions().0 as f32;
-            self.image_size.y = rgba_image.dimensions().1 as f32;
-            
-            if let Some(interface) = &self.gpu_interface {
-                interface.change_colorcorrection(&self.color_settings, self.image_size.x, self.image_size.y);
-            }
-
-            self.resize = self.image_size.x / w_orig as f32;
-            if self.color_settings.is_setted() {
-                if let Some(interface) = &self.gpu_interface {
-                    let (width, height) = rgba_image.dimensions();
-                    let mut raw_data = rgba_image.as_flat_samples_mut();
-                    interface.generate_image(raw_data.as_mut_slice(), width, height);
-                }
-                else {
-                    if let Some(lut) = &self.lut {
-                        lut.apply_lut(&mut rgba_image);
-                        println!("apply_lut");
-                    }
-                }
-            }
-
-            let pixel_data = rgba_image.into_raw();
-            let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                [self.image_size.x as usize, self.image_size.y as usize],
-                &pixel_data,
-            );
-            
-            self.texture = Some(ctx.load_texture("kep", color_image, Default::default()));
+            self.review_core(ctx, &mut img, coloring, new_rotate)
         }
+    }
+    
+    fn review_core(&mut self, ctx: &egui::Context, img: & mut image::DynamicImage, coloring: bool, new_rotate: bool) {
+        let default_settings = ColorSettings::default();
+        if coloring {
+            if let Some(_interface) = &self.gpu_interface {
+            }
+            else {
+                let lut_ref = self.lut.get_or_insert_with(Lut4ColorSettings::default);
+                lut_ref.update_lut( if self.show_original_only { &default_settings} else { &self.color_settings} );
+            }
+        } else {
+            self.lut = None;
+            self.color_settings = default_settings.clone();
+        }
+
+        let max_gpu_size = ctx.input(|i| i.max_texture_side) as u32;
+        let w_orig = img.width();
+        if img.width() > max_gpu_size || img.height() > max_gpu_size {
+            *img = img.resize(
+                max_gpu_size,
+                max_gpu_size,
+                image::imageops::FilterType::Triangle,
+            );
+        }
+
+        match self.color_settings.rotate {
+            Rotate::Rotate90 => *img = img.rotate90(),
+            Rotate::Rotate180 => *img = img.rotate180(),
+            Rotate::Rotate270 => *img = img.rotate270(),
+            _ => {}
+        }
+        if new_rotate {
+            self.first_appear = 1;
+        }
+
+        let mut rgba_image = img.to_rgba8();
+        self.image_size.x = rgba_image.dimensions().0 as f32;
+        self.image_size.y = rgba_image.dimensions().1 as f32;
+        
+        if let Some(interface) = &self.gpu_interface {
+            interface.change_colorcorrection(
+                if self.show_original_only { &default_settings} else { &self.color_settings},
+                self.image_size.x,
+                self.image_size.y);
+        }
+
+        self.resize = self.image_size.x / w_orig as f32;
+        if self.color_settings.is_setted() {
+            if self.gpu_interface.is_some() {
+                let (width, height) = rgba_image.dimensions();
+                self.gpu_interface.as_ref().unwrap().generate_image(rgba_image.as_mut(), width, height);
+            } else if let Some(lut) = &self.lut {
+                lut.apply_lut(&mut rgba_image); 
+            }
+        }
+
+        self.rgba_image = Some(rgba_image.clone());
+        let pixel_data = rgba_image.into_raw();
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+            [self.image_size.x as usize, self.image_size.y as usize],
+            &pixel_data,
+        );
+        
+        self.texture = Some(ctx.load_texture("kep", color_image, Default::default()));
+    }
+
+    fn pick_color(&self, pixel_x : u32,pixel_y: u32) -> Option<egui::Color32> {
+        if let Some(rgba_image) = &self.rgba_image {
+            if pixel_x < rgba_image.width() && pixel_y < rgba_image.height() {
+                let pixel = rgba_image.get_pixel(pixel_x, pixel_y);
+                return Some(egui::Color32::from_rgb(pixel[0], pixel[1], pixel[2]));
+            }
+        }
+        None
     }
 
     fn load_image(&mut self, ctx: &egui::Context, reopen: bool) {
@@ -1138,7 +1166,7 @@ impl ImageViewer {
                 )));
             }
 
-            self.review(ctx, false, false);
+            self.review(ctx, self.same_correction_open, false);
         }
     }
 
@@ -1154,6 +1182,7 @@ impl ImageViewer {
         self.actual_index = uj_index;
         self.open_image(ctx, &self.list_of_images[uj_index].path(), false);
     }
+
 }
 
 fn draw_custom_background(ui: &mut egui::Ui, bg_style: &BackgroundStyle) {
@@ -1227,7 +1256,7 @@ impl eframe::App for ImageViewer {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
 
         // Csak az első futáskor inicializálunk, amikor már van frame és GPU
-        if !self.gpu_tried_init && self.gpu_interface.is_none() {
+        if self.use_gpu && !self.gpu_tried_init && self.gpu_interface.is_none() {
             if let Some(render_state) = frame.wgpu_render_state() {
                 //println!("Most már van GPU állapota, indulhat a gpu_init...");
                 if let Some(interface) = gpu_colors::GpuInterface::gpu_init(render_state) {
@@ -1236,6 +1265,9 @@ impl eframe::App for ImageViewer {
                 }
                 self.gpu_tried_init = true;
             }
+            //else {
+                //println!("frame.wgpu_render_state() is None");
+            //}
         }
 
         /*if let Some(_tex) = &self.texture {
@@ -1427,7 +1459,7 @@ impl eframe::App for ImageViewer {
             ))
         }) {
             // Színkorrekció
-            self.color_correction_dialog = true;
+            self.color_correction_dialog = !self.color_correction_dialog;
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
@@ -1495,7 +1527,7 @@ impl eframe::App for ImageViewer {
             ))
         }) {
             // info
-            self.show_info = true;
+            self.show_info = !self.show_info;
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
@@ -1868,8 +1900,27 @@ impl eframe::App for ImageViewer {
                         ui.close_menu();
                     }
 
+                    if ui
+                        .selectable_label(self.use_gpu, "Use Gpu (off at restart)")
+                        .clicked()
+                    {
+                        self.use_gpu = !self.use_gpu;
+                        if !self.use_gpu {
+                            self.gpu_interface = None;
+                        } else {
+                            self.gpu_tried_init = false;
+                            ctx.request_repaint();
+                        }
+                        ui.close_menu();
+                    }
+
                     if ui.selectable_label(self.fit_open, "Fit at Open").clicked() {
                         self.fit_open = !self.fit_open;
+                        ui.close_menu();
+                    }
+
+                    if ui.selectable_label(self.same_correction_open, "No Correction at Open").clicked() {
+                        self.same_correction_open = !self.same_correction_open;
                         ui.close_menu();
                     }
 
@@ -2120,22 +2171,25 @@ impl eframe::App for ImageViewer {
                     }
                 }
 
-                if let Some(tex) = &self.texture { // CPU
-                    egui::Frame::canvas(ui.style())
+                if let Some(tex) = self.texture.as_ref() { // CPU
+                    let magnify = self.magnify;
+                    let image_size = self.image_size;
+                    let display_size_netto = self.display_size_netto;
+                    let current_offset = self.aktualis_offset;
+                    let title = format!( "IView - {}. {}  {}", self.actual_index, self.image_name, self.magnify );
+                    
+                    let output = egui::Frame::canvas(ui.style())
                         .fill(egui::Color32::TRANSPARENT)
                         .show(ui, |ui| {
 
                             draw_custom_background(ui, &self.bg_style);
 
-                            let new_size = self.image_size * self.magnify;
+                            let new_size = image_size * magnify;
                             let scroll_id = ui.make_persistent_id("kep_scroll");
                             let mut off = egui::Vec2 { x: 0.0, y: 0.0 };
 
                             if zoom != 1.0 || self.first_appear > 0 {
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-                                    "IView - {}. {}  {}",
-                                    self.actual_index, self.image_name, self.magnify
-                                )));
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
 
                                 let ui_rect = ui.max_rect();
                                 let inside = ui_rect.max - ui_rect.min;
@@ -2153,17 +2207,16 @@ impl eframe::App for ImageViewer {
                                 pointer.x = pointer.x.clamp(0.0, old_size.x);
                                 pointer.y = pointer.y.clamp(0.0, old_size.y);
 
-                                let current_offset = self.aktualis_offset;
                                 let mut offset = current_offset;
                                 offset += pointer;
                                 offset *= zoom;
                                 offset -= pointer;
 
-                                if new_size.x > self.display_size_netto.x {
+                                if new_size.x > display_size_netto.x {
                                     // need horizontal scrollbar
                                     off.x = offset.x;
                                 }
-                                if new_size.y > self.display_size_netto.y {
+                                if new_size.y > display_size_netto.y {
                                     // need vertical scrollbar
                                     off.y = offset.y;
                                 }
@@ -2184,11 +2237,46 @@ impl eframe::App for ImageViewer {
                             }
 
 
-                            let output = scroll_area.show(ui, |ui2| {
+                            let scroll_output  = scroll_area.show(ui, |ui2| {
                                 ui2.add(egui::Image::from_texture(tex).fit_to_exact_size(new_size));
                             });
-                            self.aktualis_offset = output.state.offset;
-                        });
+                            scroll_output
+                        }).inner;
+                        
+                    self.aktualis_offset = output.state.offset;
+
+                    // Csak akkor fut le, ha a Ctrl ÉS a Shift le van nyomva
+                    if ctx.input(|i| i.modifiers.ctrl && i.modifiers.shift) {
+                        if let Some(pointer_pos) = ctx.pointer_latest_pos() {
+                            // A ScrollArea belső területe (ahol a kép van)
+                            let inner_rect = output.inner_rect;
+
+                            // Ellenőrizzük, hogy az egér a látható területen belül van-e
+                            if inner_rect.contains(pointer_pos) {
+                                // Megkeressük az egér pozícióját a kép bal felső sarkához képest
+                                // Figyelembe vesszük a ScrollArea eltolását (offset)
+                                let relative_pos = pointer_pos - inner_rect.min + output.state.offset;
+                                
+                                // Kiszámoljuk a tényleges pixel koordinátát a nagyítás (magnify) alapján
+                                let pixel_x = (relative_pos.x / self.magnify) as u32;
+                                let pixel_y = (relative_pos.y / self.magnify) as u32;
+
+                                // Szín mintavételezése a korábban megírt pick_color függvénnyel
+                                if let Some(color) = self.pick_color(pixel_x, pixel_y) {
+                                    egui::show_tooltip(ctx, ui.layer_id(), egui::Id::new("pixel_info"), |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(format!( "Pos: {}, {} ", pixel_x, pixel_y ));
+                                            // Kis színes négyzet megjelenítése
+                                            let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                                            ui.painter().rect_filled(rect, 2.0, color);
+                                            ui.label(format!( "Rgb: {}, {}, {}", color.r(), color.g(), color.b() ));
+                                        });
+                                    });
+                                }
+                            }
+                        }
+                    }
+
                 } else {
                     draw_custom_background(ui, &self.bg_style);
 
@@ -2348,7 +2436,7 @@ impl eframe::App for ImageViewer {
                             ui.add_space(10.0);
                             ui.heading(egui::RichText::new("IView 2026").size(30.0).strong());
                             ui.label("The high-speed Rust image viewer");
-                            ui.label("Version: 0.3.0");
+                            ui.label("Version: 0.4.0");
                             ui.separator();
 
                             ui.add_space(10.0);
@@ -2595,24 +2683,98 @@ impl eframe::App for ImageViewer {
             .show(ctx, |ui| {
                 ui.spacing_mut().slider_width = 300.0; 
                 ui.label(egui::RichText::new("Global Corrections").strong());
-                changed |= ui.add( egui::Slider::new(&mut self.color_settings.gamma, 0.1..=3.0).text("Gamma"), ).changed();
-                changed |= ui.add( egui::Slider::new(&mut self.color_settings.contrast, -1.0..=1.0) .text("Contrass"), ).changed();
-                ui.separator();
+                let gam = ui.add(egui::Slider::new(
+                    &mut self.color_settings.gamma, 0.1..=3.0)
+                    .text("Gamma"));
+                if self.gpu_interface.is_none() {
+                    if gam.drag_stopped() || (gam.changed() && !ui.input(|i| i.pointer.any_down())) {
+                        changed = true;
+                    }
+                }
+                else {
+                    if gam.changed() {
+                        changed = true;
+                    }
+                }
+                let con = ui.add(egui::Slider::new(
+                    &mut self.color_settings.contrast, -1.0..=1.0)
+                    .text("Contrass"));
+                if self.gpu_interface.is_none() {
+                    if con.drag_stopped() || (con.changed() && !ui.input(|i| i.pointer.any_down())) {
+                        changed = true;
+                    }
+                }
+                else {
+                    if con.changed() {
+                        changed = true;
+                    }
+                }
+                //ui.separator();
 
                 // --- HSV (Színvilág) ---
-                ui.label(egui::RichText::new("Oklab / Color Shift").strong());
-                changed |= ui.add(egui::Slider::new(&mut self.color_settings.hue_shift, -180.0..=180.0).text("Hue Shift")).changed();
-                changed |= ui.add(egui::Slider::new(&mut self.color_settings.saturation, -1.0..=1.0).text("Saturation")).changed();
-                changed |= ui.add( egui::Slider::new(&mut self.color_settings.brightness, -1.0..=1.0).text("Brightness"), ) .changed();
+                //ui.label(egui::RichText::new("Hsv/Oklab Color Shift").strong());
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Color Correction Algorithm: ").strong());
+                        if ui.radio_value(&mut self.color_settings.oklab, true, "Oklab (Natural)").clicked() {
+                            changed = true;
+                        }
+                        if ui.radio_value(&mut self.color_settings.oklab, false, "HSV (Classic)").clicked() {
+                            changed = true;
+                        }
+                    });
+                    /*ui.add_enabled_ui(true, |ui| {
+                        ui.small("Az Oklab megőrzi a színek érzékelt fényerejét módosítás közben.");
+                    });*/
+                    let hue = ui.add(egui::Slider::new(
+                        &mut self.color_settings.hue_shift, -180.0..=180.0)
+                        .text("Hue Shift"));
+                    if self.gpu_interface.is_none() {
+                        if hue.drag_stopped() || (hue.changed() && !ui.input(|i| i.pointer.any_down())) {
+                            changed = true;
+                        }
+                    }
+                    else {
+                        if hue.changed() {
+                            changed = true;
+                        }
+                    }
+                    let sat = ui.add(egui::Slider::new(
+                        &mut self.color_settings.saturation, -1.0..=1.0)
+                        .text("Saturation"));
+                    if self.gpu_interface.is_none() {
+                        if sat.drag_stopped() || (sat.changed() && !ui.input(|i| i.pointer.any_down())) {
+                            changed = true;
+                        }
+                    }
+                    else {
+                        if sat.changed() {
+                            changed = true;
+                        }
+                    }
+                     let bri = ui.add(egui::Slider::new(
+                        &mut self.color_settings.brightness, -1.0..=1.0)
+                        .text("Brightness"));
+                    if self.gpu_interface.is_none() {
+                        if bri.drag_stopped() || (bri.changed() && !ui.input(|i| i.pointer.any_down())) {
+                            changed = true;
+                        }
+                    }
+                    else {
+                        if bri.changed() {
+                            changed = true;
+                        }
+                    }
 
-                ui.separator();
+                });                
+                //ui.separator();
 
                 // --- Élesítés / Blur (GPU előkészítés) ---
-                ui.label(egui::RichText::new("Sharpen (amount>0) & Blur (amount<0)").strong());
+                ui.label(egui::RichText::new("Sharpen (Amount > 0) & Blur (Amount < 0)").strong());
                 ui.horizontal(|ui| {
                     let res = ui.add(egui::Slider::new(
                         &mut self.color_settings.sharpen_amount, -1.0..=9.0)
-                        .text("Blur/Amount"));
+                        .text("Amount"));
                     if self.gpu_interface.is_none() {
                         if res.drag_stopped() || (res.changed() && !ui.input(|i| i.pointer.any_down())) {
                             changed = true;
@@ -2623,7 +2785,6 @@ impl eframe::App for ImageViewer {
                             changed = true;
                         }
                     }
-                    //changed |= ui.add(egui::Slider::new(&mut self.color_settings.sharpen_amount, -1.0..=9.0).text("Blur/Amount")).changed();
                     if ui.button("⟲").on_hover_text("Reset Amount").clicked() {
                         self.color_settings.sharpen_amount = 0.0;
                         changed = true;
@@ -2644,7 +2805,6 @@ impl eframe::App for ImageViewer {
                             changed = true;
                         }
                     }
-                    //changed |= ui.add(egui::Slider::new(&mut self.color_settings.sharpen_radius, 0.2..=7.0).text("Radius")).changed();
                     if ui.button("⟲").on_hover_text("Reset Radius").clicked() {
                         self.color_settings.sharpen_radius = 0.2;
                         changed = true;
@@ -2652,10 +2812,24 @@ impl eframe::App for ImageViewer {
                 });
 
                 ui.add_space(10.0);
-                if ui.button("Reset All Settings").clicked() {
-                    self.color_settings = ColorSettings::default();
-                    changed = true;
-                }
+                ui.horizontal(|ui| {
+                    if ui.button("Reset All Settings").clicked() {
+                        self.color_settings = ColorSettings::default();
+                        changed = true;
+                    }
+                    ui.add_space(ui.available_width() - 90.0); 
+
+                    let btn = ui.add(egui::Button::new("Show Original"));
+                    let orig = self.show_original_only;
+                    if btn.contains_pointer() && ui.input(|i| i.pointer.any_down()) {
+                        self.show_original_only = true;
+                    } else {
+                        self.show_original_only = false;
+                    }
+                    if self.show_original_only != orig {
+                        changed = true;
+                    }
+                });
             });
             if changed {
                 self.settings_dirty = true;

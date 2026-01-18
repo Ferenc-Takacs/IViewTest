@@ -53,7 +53,6 @@ pub struct GpuInterface {
 impl GpuInterface {
     ///////////////////////////////////////////////////////////////////////////
     pub fn gpu_init(render_state: &egui_wgpu::RenderState) -> Option<Self> {
-        return None;
         let limits = render_state.adapter.limits();
         if limits.max_storage_textures_per_shader_stage < 1 {
             eprintln!("Hiba: A GPU nem támogatja a Storage Texture-öket (VirtualBox/régi driver).");

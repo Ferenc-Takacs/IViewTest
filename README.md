@@ -16,18 +16,22 @@
 *   **📋 Clipboard Integration:**
     *   Display images directly from the clipboard.
     *   Copy the currently displayed image to the clipboard.
+    *   Replace the opened image with the image on the clipboard.
 *   **💾 Export & Convert:** Save loaded images in multiple formats, including `JPG`, `PNG`, `BMP`, `TIF`, `GIF`, and `WEBP`.
-*   **💾 Recent path:** Bring short the recent files and path for open, and save manipulations.
+*   **💾 Recent path:** Quick access to previously used files and their paths for reading and saving.
 *   **🎨 Image Manipulation:**
     *   **Zooming:** Scaling options ranging from 0.1x up to 10x.
     *   **Rotation:** Quick fixed-angle rotation (0°, 90°, 180°, 270°).
-    *   **Adjustments:** Fine-tune Gamma, Contrast, Hue, Saturation and Brightness.
+    *   **Adjustments:** Fine-tune Gamma, Contrast, Hue, Saturation and Brightness, Gaussian Blur/Sharpen, color rotation in Oklab or Hsv color space, color saturation adjustment.
     *   **Color Tools:** Toggle individual color channels (RGB) or apply color inversion.
+	
 ![IView preview](screenshots/preview_invert.jpg)
+
 *   **⚙️ Advanced Features:**
     *   Display detailed image metadata and technical information.
     *   **Geolocation:** View stored location data directly in Google Maps.
     *   **Animation** Read, and show Webp and Gif animations.
+    *   **PickPixel** Info about the position and color of a given point in the image.
     *   **GPU Optimization:** Automatic resizing of oversized panoramic images to the hardware-standard maximum of 16384 x 16384 pixels for stable GPU rendering.
     *   **Export with Adjustments:** Use "Save View" or "Copy View" to export the image exactly as seen on screen, including zoom levels, rotations, and color adjustments.
     *   **High-Quality Scaling:** For saving and copying, the app utilizes Lanczos3 resampling to ensure professional-grade sharpness even when resizing.
@@ -46,15 +50,20 @@
     *   **Zoom:** You can use the slider or mouse wheel to zoom in from 0.1x to 10x. The window will expand to the maximum size of the screen, and you can move the invisible parts of the image by dragging the image or using the slider within the window.
     *   **Image correction:** Adjust Gamma, Contrast and Brightness in real time. In the Color menu, you can turn on/off the red, green and blue channels, and also set inverse colors.
     *   **Background styles:** For transparent (Png/WebP/Bmp/Tiff) images, you can choose between black, white, gray, or different checkerboard patterns in the View -> Background Style menu.
+	
 ![IView preview](screenshots/preview_transparent.webp)
+
 *   **💾 Save and Export**
 
     *   **Save:** It saves the original image while allowing you to switch to a different image format. In the case of Jpeg and Webp, you can also set the image quality for the save.
-    *   **Copy:** The origin puts an image on the clipboard so other programs can copy it directly (rgba color model).
     *   **Save View:** Saves the image with the current changes (rotation, colors, zoom). If you are at 0.5x zoom, the image will be saved at half the size.
+    *   **Copy:** The origin puts an image on the clipboard so other programs can copy it directly (rgba color model).
     *   **Copy View:** Puts the modified image on the clipboard, with pin-sharp Lanczos3 resampling.
+    *   **Paste:** Imports the image from the clipboard into the program.
+    *   **Change:** It places the original image on the clipboard while importing the image there into the program.
+    *   **Change View:** It places the modified image on the clipboard while importing the image that is there. This allows you to repeat the modifications.
     *   **Formats:** Supported read/save types: .jpg, .png, .webp, .tif, .bmp, .gif. For animated images, it currently reads the first image.
-    *   **Restriction:** Since the interface used swallows it, the usual Ctrl+c Ctrl+v combination cannot be used. Instead, there is Alt+c, Alt+v.
+    *   **Restriction:** Since the interface used swallows it, the usual Ctrl+c Ctrl+v combination cannot be used. Instead, there is Alt+c, Alt+v. The program does not display images on a system installed in VirtualBox due to current limitations on GPU usage.
     *   **GPS datas:** If the image contains geolocation metadata, a button will appear in the Info panel that will open the location directly on Google Maps.
 
 ---
@@ -70,20 +79,25 @@ Az **IView** egy sokoldalú képnézegető alkalmazás, amely számos hasznos ki
 *   **📋 Vágólap kezelés:** 
     *   Vágólapon lévő képek közvetlen megjelenítése.
     *   A megnyitott kép vágólapra másolása.
+    *   A megnyitott kép felcserélése a vágólapon levő képpel.
 *   **💾 Konvertálás:** Képek mentése különböző formátumokba: `JPG`, `PNG`, `BMP`, `TIF`, `GIF`, `WEBP`.
-*   **💾 Legutóbbi útvonalak:** Gyors elérése a korábban használt fájlol, és útvonalaik használatára beolvasáshoz, és mentéshez.
+*   **💾 Legutóbbi útvonalak:** Gyors elérése a korábban használt fájlok, és útvonalaik használatára beolvasáshoz, és mentéshez.
 *   **🎨 Képmódosítások:**
     *   **Nagyítás/Kicsinyítés:** Skálázható méret 0.1-től egészen 10-es szorzóig.
     *   **Forgatás:** Gyors elforgatás (0°, 90°, 180°, 270°).
-    *   **Képkorrekció:** Gamma, kontraszt és világosság állítási lehetőség.
+    *   **Képkorrekció:** Gamma, kontraszt és világosság állítási lehetőség, Gaussian élesítés/homályosítás, színforgatás az Oklab vagy Hsv színtérben, színtelítettség állítás.
     *   **Színkezelés:** Színcsatornák (R, G, B) egyenkénti ki/be kapcsolása és inverz megjelenítés.
 *   **⚙️ Speciális funkciók:**
     *   Részletes képinformációk és metaadatok megjelenítése.
     *   **Geolokáció:** Tárolt GPS koordináták megnyitása közvetlenül a Google Maps alkalmazásban.
     *   **Animáció** A Webp and Gif animációk olvasása, lejátszása.
+    *   **PickPixel** Info a kép adott pontja pozíciójáról, és színéről.
     *   **GPU Optimalizálás:** A túl nagy panorámaképek automatikus átméretezése a grafikus processzorok (GPU) által megkövetelt maximum 16384 x 16384 képpontos méretre.
     *   **Módosítások exportálása:** Lehetőség van a képernyőn látható módosítások (nagyítás/kicsinyítés, forgatás, LUT effektek) alkalmazásával menteni a képet ("Save View") vagy a vágólapra másolni azt ("Copy View").
     *   **Prémium átméretezés:** Mentésnél és másolásnál az alkalmazás Lanczos3 mintavételezést használ, ami tűéles minőséget biztosít kicsinyítés esetén is.
+	
+![IView preview](screenshots/preview_a.png)
+
 ---
 ### 📖 Használati útmutató
 
@@ -103,11 +117,14 @@ Az **IView** egy sokoldalú képnézegető alkalmazás, amely számos hasznos ki
 *   **💾 Mentés és Exportálás**
 
     *   **Save:** Elmenti az eredeti képet, miközben más kép formátumra válthatsz. Jpeg és Webp esetén a mentés képminőségét is beállíthatod.
-    *   **Copy:** Az eredet képet teszi a vágólapra, így más programok közvetlenül átvehetik azt (rgba színmodell).
     *   **Save View:** Elmenti a képet a jelenlegi módosításokkal (forgatás, színek, nagyítás). Ha 0.5x nagyításon állsz, a kép feleakkora méretben kerül mentésre.
+    *   **Copy:** Az eredet képet teszi a vágólapra, így más programok közvetlenül átvehetik azt (rgba színmodell).
     *   **Copy View:** A módosított képet teszi a vágólapra, tűéles Lanczos3 újramintavételezéssel.
+    *   **Paste:** A vágólapon levő képet behozza a programba.
+    *   **Change:** Az eredeti képet a vágólapra teszi, miközben az ott levő képet hozza be programba.
+    *   **Change View:** A módosított képet a vágólapra teszi, miközben az ott levő képet hozza be. Ez a módosítások ismétlését teszi lehetővé.
     *   **Formátumok:** Támogatott olvasási/mentési típusok: .jpg, .png, .webp, .tif, .bmp, .gif. Animált képeknél jelenleg az első képet olvassa.
-    *   **Korlátozás:** Mivel a használt interfész lenyeli, így nem használható a szokásos Ctrl+c Ctrl+v kombináció. Helyette Alt+c, Alt+v van.
+    *   **Korlátozás:** Mivel a használt interfész lenyeli, így nem használható a szokásos Ctrl+c Ctrl+v kombináció. Helyette Alt+c, Alt+v van. A program a GPU használat jelenlegi korlátozásai miatt nem jelenít meg képet VirtualBox-ban installált rendszerben.
     *   **GPS adatok:** Ha a kép tartalmaz geolokációs metaadatokat, az Info panelen megjelenik egy gomb, amellyel a helyszín közvetlenül megnyitható a Google Maps-en.
 
 ---
@@ -117,6 +134,7 @@ Az **IView** egy sokoldalú képnézegető alkalmazás, amely számos hasznos ki
 
 | Key | Function |
 | --- | --- |
+| + / - | Zoom in / out |
 | B / N | Before / Next image in directory |
 | O | Open image |
 | R | Reopen same image (hide/show inside/outside modification)|
@@ -125,6 +143,8 @@ Az **IView** egy sokoldalú képnézegető alkalmazás, amely számos hasznos ki
 | Alt + C | Copy |
 | Alt + Shift + C | Copy View  |
 | Alt + V | Paste  |
+| Alt + X | Change  |
+| Alt + Shift + X | Change View  |
 | Escape | exit from popup windows or program  |
 | Ctrl + R | Toggle red channel |
 | Ctrl + G | Toggle greeen channel |
@@ -133,6 +153,11 @@ Az **IView** egy sokoldalú képnézegető alkalmazás, amely számos hasznos ki
 | C | Open color corrections window |
 | I | Open informations window |
 | D | Toggle backgrounds for transparent images |
+| Ctrl + Left | Rotate -90° |
+| Ctrl + Rigth | Rotate 90° |
+| Ctrl + Up | Rotate 180° |
+| Ctrl + Down | Stand 0° |
+| Ctrl + Shift | Pick Pixel to Tooltip |
 
 ---
 ### 🛠 Tech Stack / Technológiai háttér
@@ -143,7 +168,7 @@ Az **IView** egy sokoldalú képnézegető alkalmazás, amely számos hasznos ki
 *   **Cross-platform:** Tested and working on Windows 10 and Linux (Linux Mint).
 
 *   **Executables:** in the executables folder
-*   **Latest Version:** 0.2.0 
+*   **Latest Version:** 0.3.0 
 
 ### 🚀 Development / Fejlesztés
 

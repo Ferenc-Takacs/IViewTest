@@ -1,7 +1,15 @@
 use rayon::prelude::*;
 //use eframe::egui;
 use serde::{Deserialize, Serialize};
+use std::f32::consts::PI;
 
+const TWO_PI: f32 = PI * 2.0;
+
+fn r(th: f32) -> f32 {
+    let ra = 2.4285922050f32;
+    let rb = 0.808675766f32;
+    (ra * rb) / (rb * th.cos()).hypot(ra * th.sin())
+}
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct ColorSettings {
@@ -55,16 +63,17 @@ impl ColorSettings {
     }
 
     pub fn convert(&self, color: &mut [f32; 3] ) {
-        if self.is_default  { return; }
+        //if self.is_default  { return; }
         if self.invert {
             *color = [1.0 - color[0], 1.0 - color[1], 1.0 - color[2]];
         }
         *color = self.apply_color_settings(*color);
+        let factor = (1.015 * (self.contrast + 1.0)) / (1.015 - self.contrast);
         for channel in color.iter_mut() {
-            *channel += self.brightness;
-            let factor = (1.015 * (self.contrast + 1.0)) / (1.015 - self.contrast);
-            *channel = factor * (*channel - 0.5) + 0.5;
-            *channel = channel.powf(1.0 / self.gamma);
+            *channel = factor * (*channel + self.brightness - 0.5) + 0.5;
+            if self.gamma != 1.0 {
+                *channel = channel.max(0.0).powf(1.0 / self.gamma);
+            }
             *channel = channel.clamp(0.0, 1.0);
         }
         if !self.show_r { color[0] = 0.0 };
@@ -155,20 +164,24 @@ impl ColorSettings {
         let lt = 0.2104542553f32*l_ + 0.7936177850f32*m_ - 0.0040720468f32*s_; // lightness
         let a  = 1.9779984951f32*l_ - 2.4285922050f32*m_ + 0.4505937099f32*s_; // green/red
         let b  = 0.0259040371f32*l_ + 0.7827717662f32*m_ - 0.8086757660f32*s_; // blue/yellow
-        
-        let mut hue = b.atan2(a).to_degrees();
-        if hue < 0.0 { hue += 360.0; }
-        hue /= 360.0;
-        let sat = a.hypot(b);
-        [ hue, sat, lt ]
+
+        let mut hue = b.atan2(a);
+        let sat_cur = a.hypot(b);
+        let sat_norm = sat_cur / r(hue);
+
+        if hue < 0.0 { hue += TWO_PI; }
+        hue /= TWO_PI; // from 0.0  to  1.0
+
+        [  hue, sat_norm, lt ]
     }
 
     pub fn oklab_to_rgb(oklab: [f32; 3]) -> [f32; 3] {
         let lt = oklab[2];
-        let ang = (oklab[0]*360.0).to_radians();
-        let a = oklab[1] * ang.cos();
-        let b = oklab[1] * ang.sin();
-        
+        let angle = oklab[0] * TWO_PI;
+        let sat_cur = oklab[1] * r(angle);
+        let a = sat_cur * angle.cos();
+        let b =sat_cur * angle.sin();
+
         let l_ = lt + 0.3963377774f32 * a + 0.2158037573f32 * b;
         let m_ = lt - 0.1055613458f32 * a - 0.0638541728f32 * b;
         let s_ = lt - 0.0894841775f32 * a - 1.2914855480f32 * b;
@@ -183,12 +196,6 @@ impl ColorSettings {
             -0.0041960863f32 * l - 0.7034186147f32 * m + 1.7076147010f32 * s,
         ]
     }
-
-/*
-C=√​a​2​​+b​2​​​​​,h​∘​​=atan2(b,a)
-
-a=C cos(h​∘​​),b=C sin(h​∘​​)
-*/
 
 }
 
@@ -220,13 +227,6 @@ impl Lut4ColorSettings {
         }
         Self { size:size, data:data, sharpen_amount:0.0,sharpen_radius:0.0, }
     }
-    
-    /*pub fn any_lut() -> Self {
-        let mut data = Vec::with_capacity(1);
-        let size = 0;
-        data.push(255);
-        Self { size:size, data:data, sharpen_amount:0.0, sharpen_radius:0.0, }
-    }*/
     
     pub fn default() -> Lut4ColorSettings {
         let mut s = Lut4ColorSettings::new();
@@ -385,15 +385,13 @@ impl Lut4ColorSettings {
         if r > 0 && self.sharpen_radius >= 0.2 && self.sharpen_amount != 0.0 {
             let weights = self.calculate_weights(r);
             let source_img = img.clone(); // Olvasható másolat a szomszédokhoz
-            println!("apply_lut_blur_color");
             img.enumerate_pixels_mut().par_bridge().for_each(|(x, y, pixel)| {
                 self.blur_pixel(x, y, pixel, &source_img, &weights, r);
                 self.apply_lut_pixel(x, y, pixel);
             });
         } else {
             // Ha nincs blur, csak a színkorrekció fut
-            println!("apply_lut_color");
-            img.enumerate_pixels_mut().par_bridge().for_each(|(x, y, pixel)| {
+            img.enumerate_pixels_mut().for_each(|(x, y, pixel)| {
                 self.apply_lut_pixel(x, y, pixel);
             });
         }
