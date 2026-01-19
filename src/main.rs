@@ -1590,7 +1590,7 @@ impl eframe::App for ImageViewer {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             ui.visuals_mut().widgets.noninteractive.bg_stroke = egui::Stroke::NONE;
 
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui: &mut egui::Ui| {
                 //ui.push_id("main_menu_scope", |ui| {
                 ui.menu_button("Fájl", |ui| {
                     ui.set_min_width(250.0);
@@ -1601,7 +1601,7 @@ impl eframe::App for ImageViewer {
                         ));
                     if ui.add(open_button).clicked() {
                         self.open_image_dialog(ctx, &None);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     let reopen_button =
@@ -1610,7 +1610,7 @@ impl eframe::App for ImageViewer {
                         ));
                     if ui.add(reopen_button).clicked() {
                         self.load_image(ctx, true);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     let save_button =
@@ -1620,7 +1620,7 @@ impl eframe::App for ImageViewer {
                     if ui.add(save_button).clicked() {
                         self.save_original = true;
                         self.starting_save(&None);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     let save_button =
@@ -1630,7 +1630,7 @@ impl eframe::App for ImageViewer {
                     if ui.add(save_button).clicked() {
                         self.save_original = false;
                         self.starting_save(&None);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     let recent_button =
@@ -1641,7 +1641,7 @@ impl eframe::App for ImageViewer {
                         if !self.config.recent_files.is_empty() {
                             self.show_recent_window = true;
                         }
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     ui.separator();
@@ -1652,7 +1652,7 @@ impl eframe::App for ImageViewer {
                     if ui.add(copy_button).clicked() {
                         self.save_original = true;
                         self.copy_to_clipboard();
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     let copy_button = egui::Button::new("Copy view").shortcut_text(
@@ -1664,7 +1664,7 @@ impl eframe::App for ImageViewer {
                     if ui.add(copy_button).clicked() {
                         self.save_original = false;
                         self.copy_to_clipboard();
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     let paste_button =
@@ -1673,7 +1673,7 @@ impl eframe::App for ImageViewer {
                         ));
                     if ui.add(paste_button).clicked() {
                         self.copy_from_clipboard(ctx);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     let copy_button = egui::Button::new("Change").shortcut_text(ctx.format_shortcut(
@@ -1682,7 +1682,7 @@ impl eframe::App for ImageViewer {
                     if ui.add(copy_button).clicked() {
                         self.save_original = false;
                         self.change_with_clipboard(ctx);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     let copy_button = egui::Button::new("Change view").shortcut_text(ctx.format_shortcut(
@@ -1691,7 +1691,7 @@ impl eframe::App for ImageViewer {
                     if ui.add(copy_button).clicked() {
                         self.save_original = true;
                         self.change_with_clipboard(ctx);
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     ui.separator();
@@ -1706,7 +1706,7 @@ impl eframe::App for ImageViewer {
                     ui.menu_button("Help", |ui| {
                         if ui.button("About IView...").clicked() {
                             self.show_about_window = true;
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     });
                 });
@@ -1740,7 +1740,7 @@ impl eframe::App for ImageViewer {
                         }
                         if changed {
                             self.make_image_list(); // Újrarendezzük a listát az új szempont szerint
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     });
 
@@ -1760,7 +1760,7 @@ impl eframe::App for ImageViewer {
                         }
                         if changed {
                             self.load_image(ctx, false);
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     });
                     ui.menu_button("Channels hide/show", |ui| {
@@ -1840,7 +1840,7 @@ impl eframe::App for ImageViewer {
                             self.color_settings.rotate =
                                 self.color_settings.rotate.add(Rotate::Rotate180);
                             self.review(ctx, true, false);
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
 
                         let right_button = egui::Button::new("Right").shortcut_text(
@@ -1853,7 +1853,7 @@ impl eframe::App for ImageViewer {
                             self.color_settings.rotate =
                                 self.color_settings.rotate.add(Rotate::Rotate90);
                             self.review(ctx, true, true);
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
 
                         let left_button = egui::Button::new("Left").shortcut_text(
@@ -1866,7 +1866,7 @@ impl eframe::App for ImageViewer {
                             self.color_settings.rotate =
                                 self.color_settings.rotate.add(Rotate::Rotate270);
                             self.review(ctx, true, true);
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
 
                         let down_button = egui::Button::new("Stand").shortcut_text(
@@ -1880,7 +1880,7 @@ impl eframe::App for ImageViewer {
                                 || self.color_settings.rotate == Rotate::Rotate270;
                             self.color_settings.rotate = Rotate::Rotate0;
                             self.review(ctx, true, r);
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     });
                     let col_button =
@@ -1889,7 +1889,7 @@ impl eframe::App for ImageViewer {
                         ));
                     if ui.add(col_button).clicked() {
                         self.color_correction_dialog = true;
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     if ui
@@ -1897,7 +1897,7 @@ impl eframe::App for ImageViewer {
                         .clicked()
                     {
                         self.refit_reopen = !self.refit_reopen;
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     if ui
@@ -1911,17 +1911,17 @@ impl eframe::App for ImageViewer {
                             self.gpu_tried_init = false;
                             ctx.request_repaint();
                         }
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     if ui.selectable_label(self.fit_open, "Fit at Open").clicked() {
                         self.fit_open = !self.fit_open;
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     if ui.selectable_label(self.same_correction_open, "No Correction at Open").clicked() {
                         self.same_correction_open = !self.same_correction_open;
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
 
                     let info_button = egui::Button::new("Info").shortcut_text(ctx.format_shortcut(
@@ -1929,32 +1929,32 @@ impl eframe::App for ImageViewer {
                     ));
                     if ui.add(info_button).clicked() {
                         self.show_info = true;
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                     ui.menu_button("Background \tD", |ui| {
                         if ui
                             .radio_value(&mut self.bg_style, BackgroundStyle::Black, "Black")
                             .clicked()
                         {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         if ui
                             .radio_value(&mut self.bg_style, BackgroundStyle::Gray, "Gray")
                             .clicked()
                         {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         if ui
                             .radio_value(&mut self.bg_style, BackgroundStyle::White, "White")
                             .clicked()
                         {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         if ui
                             .radio_value(&mut self.bg_style, BackgroundStyle::Green, "Green")
                             .clicked()
                         {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         ui.separator();
                         if ui
@@ -1965,7 +1965,7 @@ impl eframe::App for ImageViewer {
                             )
                             .clicked()
                         {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         if ui
                             .radio_value(
@@ -1975,7 +1975,7 @@ impl eframe::App for ImageViewer {
                             )
                             .clicked()
                         {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                         if ui
                             .radio_value(
@@ -1985,7 +1985,7 @@ impl eframe::App for ImageViewer {
                             )
                             .clicked()
                         {
-                            ui.close_menu();
+                            ui.close_kind(egui::UiKind::Menu);
                         }
                     });
                     if ui
@@ -1993,7 +1993,7 @@ impl eframe::App for ImageViewer {
                         .clicked()
                     {
                         self.anim_loop = !self.anim_loop;
-                        ui.close_menu();
+                        ui.close_kind(egui::UiKind::Menu);
                     }
                 });
 
@@ -2002,14 +2002,14 @@ impl eframe::App for ImageViewer {
                 ));
                 if ui.add(prev_button).clicked() {
                     self.navigation(ctx, -1);
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 let next_button = egui::Button::new(">>").shortcut_text(ctx.format_shortcut(
                     &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::N),
                 ));
                 if ui.add(next_button).clicked() {
                     self.navigation(ctx, 1);
-                    ui.close_menu();
+                    ui.close_kind(egui::UiKind::Menu);
                 }
                 ui.separator();
 
@@ -2091,7 +2091,7 @@ impl eframe::App for ImageViewer {
         }
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().inner_margin(0.0)) // Margók eltüntetése
+            .frame(egui::Frame::NONE.inner_margin(0.0)) // Margók eltüntetése
             .show(ctx, |ui| {
                 let mut in_w;
                 let mut in_h;
@@ -2099,7 +2099,7 @@ impl eframe::App for ImageViewer {
                 if self.first_appear > 0 {
                     if self.first_appear == 1 {
                         let outer_size = ctx.input(|i| i.viewport().outer_rect.unwrap().size());
-                        let inner_size = ctx.input(|i| i.screen_rect.size());
+                        let inner_size = ctx.input(|i| i.viewport_rect().size());
                         self.frame = outer_size - inner_size;
                         self.frame.y += 30.0;
                         self.display_size_netto =
@@ -2246,32 +2246,31 @@ impl eframe::App for ImageViewer {
                     self.aktualis_offset = output.state.offset;
 
                     // Csak akkor fut le, ha a Ctrl ÉS a Shift le van nyomva
-                    if ctx.input(|i| i.modifiers.ctrl && i.modifiers.shift) {
+                    if ctx.input(|i| i.modifiers.ctrl || (i.modifiers.ctrl && i.modifiers.shift)) {
                         if let Some(pointer_pos) = ctx.pointer_latest_pos() {
-                            // A ScrollArea belső területe (ahol a kép van)
                             let inner_rect = output.inner_rect;
-
-                            // Ellenőrizzük, hogy az egér a látható területen belül van-e
                             if inner_rect.contains(pointer_pos) {
-                                // Megkeressük az egér pozícióját a kép bal felső sarkához képest
-                                // Figyelembe vesszük a ScrollArea eltolását (offset)
                                 let relative_pos = pointer_pos - inner_rect.min + output.state.offset;
-                                
-                                // Kiszámoljuk a tényleges pixel koordinátát a nagyítás (magnify) alapján
                                 let pixel_x = (relative_pos.x / self.magnify) as u32;
                                 let pixel_y = (relative_pos.y / self.magnify) as u32;
 
-                                // Szín mintavételezése a korábban megírt pick_color függvénnyel
                                 if let Some(color) = self.pick_color(pixel_x, pixel_y) {
-                                    egui::show_tooltip(ctx, ui.layer_id(), egui::Id::new("pixel_info"), |ui| {
-                                        ui.horizontal(|ui| {
-                                            ui.label(format!( "Pos: {}, {} ", pixel_x, pixel_y ));
-                                            // Kis színes négyzet megjelenítése
-                                            let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                                            ui.painter().rect_filled(rect, 2.0, color);
-                                            ui.label(format!( "Rgb: {}, {}, {}", color.r(), color.g(), color.b() ));
-                                        });
-                                    });
+                                    let tooltip_id = egui::Id::new("pixel_info");
+                                    #[allow(deprecated)]     
+                                    egui::show_tooltip_at(
+                                        ctx,
+                                        ui.layer_id(),
+                                        tooltip_id,
+                                        ctx.pointer_latest_pos().unwrap_or(egui::Pos2::ZERO) + egui::vec2(16.0, 16.0),
+                                        |ui: &mut egui::Ui| {
+                                            ui.horizontal(|ui: &mut egui::Ui| {
+                                                ui.label(format!("Pos: {}, {} ", pixel_x, pixel_y));
+                                                let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                                                ui.painter().rect_filled(rect, 2.0, color);
+                                                ui.label(format!("Rgb: {}, {}, {}", color.r(), color.g(), color.b()));
+                                            });
+                                        }
+                                    );
                                 }
                             }
                         }
@@ -2329,7 +2328,7 @@ impl eframe::App for ImageViewer {
 
                     egui::CentralPanel::default().show(ctx, |ui| {
                         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                        let is_new_window = ctx.screen_rect().width() <= 51.0;
+                        let is_new_window = ctx.viewport_rect().width() <= 51.0;
 
                         ui.vertical(|ui| {
                             let mut action = None; // (ActionType, PathBuf)
@@ -2359,7 +2358,7 @@ impl eframe::App for ImageViewer {
                                     } else {
                                         action = Some(("SAVE_DIAL", path.clone()));
                                     }
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                                 if button.clicked() {
                                     if ui.input(|i| i.modifiers.shift || i.modifiers.command) {
@@ -2367,7 +2366,7 @@ impl eframe::App for ImageViewer {
                                     } else {
                                         action = Some(("OPEN", path.clone()));
                                     }
-                                    ui.close_menu();
+                                    ui.close_kind(egui::UiKind::Menu);
                                 }
                             }
 
@@ -2498,7 +2497,7 @@ impl eframe::App for ImageViewer {
                 .collapsible(false)
                 .resizable(false)
                 .pivot(egui::Align2::CENTER_CENTER) // Középre tesszük
-                .default_pos(ctx.screen_rect().center())
+                .default_pos(ctx.viewport_rect().center())
                 .show(ctx, |ui| {
                     match save_data.saveformat {
                         SaveFormat::Jpeg => {
