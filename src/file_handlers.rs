@@ -6,6 +6,7 @@ use std::time::SystemTime;
 use webp::Encoder;
 use image::AnimationDecoder;
 use std::io::{Read, Seek};
+//use std::fs::Metadata;
 
 use crate::colors::*;
 use crate::image_processing::*;
@@ -260,10 +261,9 @@ impl ImageViewer {
         let mut rgba_image = processed_img.to_rgba8();
         if self.color_settings.is_setted() {
             if let Some(interface) = &self.gpu_interface {
-                let w = rgba_image.dimensions().0;
-                let h = rgba_image.dimensions().1;
-                let mut raw_data = rgba_image.as_flat_samples_mut();
-                interface.generate_image(raw_data.as_mut_slice(), w , h);
+                let (w, h) = rgba_image.dimensions();
+                interface.change_colorcorrection( &self.color_settings, w as f32, h as f32);
+                interface.generate_image(rgba_image.as_mut(), w, h);
             }
             else {
                 if let Some(lut) = &self.lut {
@@ -272,6 +272,10 @@ impl ImageViewer {
             }
         }
         *img = image::DynamicImage::ImageRgba8(rgba_image);
+        let bytes = img.as_bytes();
+        if bytes.iter().all(|&x| x == 0) {
+            println!("HIBA: A kép még mindig csupa nulla a módosítás után!");
+        }
     }
 
     pub fn make_image_list(&mut self) {
@@ -424,15 +428,6 @@ impl ImageViewer {
                     self.image_modifies(&mut img);
                 }
                 match save_data.saveformat {
-                    /*SaveFormat::Jpeg => {
-                        let file = std::fs::File::create(&save_data.full_path).unwrap();
-                        let mut writer = std::io::BufWriter::new(file);
-                        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
-                            &mut writer,
-                            save_data.quality,
-                        );
-                        let _ = img.write_with_encoder(encoder);
-                    }*/
                     
                     SaveFormat::Jpeg => {
                         // 1. Mentés memóriába
@@ -441,8 +436,8 @@ impl ImageViewer {
                         img.write_with_encoder(encoder).expect("JPEG kódolási hiba");
 
                         // 2. DPI beírása
-                        if let Some(res) = resolution {
-                            if let Ok(mut jpeg) = img_parts::jpeg::Jpeg::from_bytes(buffer.into()) {
+                        if let Ok(mut jpeg) = img_parts::jpeg::Jpeg::from_bytes(buffer.into()) {
+                            if let Some(res) = resolution {
                                 let dpi_unit = if res.dpi { 1u8 } else { 2u8 }; 
                                 let x_res = res.xres as u16;
                                 let y_res = res.yres as u16;
@@ -470,32 +465,21 @@ impl ImageViewer {
                                 } else {
                                     jpeg.segments_mut().insert(0, new_seg);
                                 }
-
-        /*if let Some(raw_exif) = &self.raw_exif_bytes { 
-            // Az EXIF-nek "Exif\0\0" headerrel kell kezdődnie az APP1-ben
-            let mut exif_data = Vec::new();
-            if !raw_exif.starts_with(b"Exif\0\0") {
-                exif_data.extend_from_slice(b"Exif\0\0");
-            }
-            exif_data.extend_from_slice(raw_exif);
-
-            let new_exif = img_parts::jpeg::JpegSegment::new_with_contents(0xE1, img_parts::Bytes::from(exif_data));
-            
-            // Ha már van APP1 (Exif), cseréljük, ha nincs, tegyük a JFIF után
-            let pos = jpeg.segments().iter().position(|s| s.marker() == 0xE1);
-            if let Some(p) = pos { 
-                jpeg.segments_mut()[p] = new_exif; 
-            } else {
-                // Az APP1-nek a JFIF (APP0) után kell lennie
-                jpeg.segments_mut().insert(1.min(jpeg.segments().len()), new_exif);
-            }
-        }*/
-                                
-                                let file = std::fs::File::create(&save_data.full_path).unwrap();
-                                jpeg.encoder().write_to(file).expect("Fájlírási hiba");
                             }
-                        } else {
-                            std::fs::write(&save_data.full_path, buffer).expect("Fájlírási hiba");
+
+                            // JPEG mentés a nyers EXIF megtartásával
+                            if let Some(raw_exif) = &self.raw_exif {
+                                // Készítünk egy APP1 szegmenst a meglévő bájtokból
+                                let exif_segment = img_parts::jpeg::JpegSegment::new_with_contents(
+                                    0xE1, 
+                                    img_parts::Bytes::from(raw_exif.clone())
+                                );
+                                // Beszúrjuk a JPEG szegmensek közé (a JFIF APP0 után)
+                                jpeg.segments_mut().insert(1, exif_segment);
+                            }
+
+                            let file = std::fs::File::create(&save_data.full_path).unwrap();
+                            jpeg.encoder().write_to(file).expect("Fájlírási hiba");
                         }
                     }
                     SaveFormat::Webp => {
@@ -559,12 +543,50 @@ impl ImageViewer {
                             let _ = img.save(&save_data.full_path);
                         }
                     }
-                    SaveFormat::Bmp | SaveFormat::Gif => {
+                    
+                    SaveFormat::Bmp => {
+                        // 1. Memóriába mentjük a BMP-t, nem közvetlenül a fájlba
+                        let mut buffer = std::io::Cursor::new(Vec::new());
+                        img.write_to(&mut buffer, image::ImageFormat::Bmp)
+                            .expect("Hiba a BMP kódolásakor");
+                        let mut bmp_data = buffer.into_inner();
+                        if let Some(res) = resolution {
+                            let (dpm_x, dpm_y) = if res.dpi {
+                                ((res.xres / 0.0254) as u32, (res.yres / 0.0254) as u32)
+                            } else {
+                                ((res.xres / 0.01) as u32, (res.yres / 0.01) as u32)
+                            };
+                            let dpm_x_bytes = dpm_x.to_le_bytes();
+                            let dpm_y_bytes = dpm_y.to_le_bytes();
+                            if bmp_data.len() > 46 {
+                                // X felbontás (38-41. bájt)
+                                bmp_data[38..42].copy_from_slice(&dpm_x_bytes);
+                                // Y felbontás (42-45. bájt)
+                                bmp_data[42..46].copy_from_slice(&dpm_y_bytes);
+                            }
+                        }
+                        std::fs::write(&save_data.full_path, bmp_data)
+                            .expect("Hiba a BMP fájl mentésekor");
+                    }
+
+                    SaveFormat::Gif => {
                         if let Err(e) = img.save(&save_data.full_path) {
                             println!("Hiba a mentéskor ({:?}): {}", save_data.saveformat, e);
                         }
                     }
                 }
+                
+                
+                /*if let Ok(meta) = rexiv2::Metadata::new_from_path(&save_data.full_path) {
+                    // 1. Átmásoljuk az eredeti EXIF-et, ha van
+                    if let Some(raw) = &self.raw_exif {
+                        // (Itt a korábban megbeszélt APP1/Exif beillesztés kellhet)
+                    }
+                    meta.set_pixel_per_unit_x(res.xres as f64);
+                    meta.set_pixel_per_unit_y(res.yres as f64);
+                    meta.set_units(if res.dpi { rexiv2::Unit::Inch } else { rexiv2::Unit::Cm });
+                    let _ = meta.save_to_file(&save_data.full_path);
+                }*/
             }
         }
     }
@@ -714,11 +736,26 @@ impl ImageViewer {
                     }
                 }
             }
-            if let Ok(metadata) = fs::metadata(&filepath) {
+
+            if let Ok(metadata) = fs::metadata(&filepath) { // for file size & date
                 self.file_meta = Some(metadata);
             } else {
                 self.file_meta = None;
             }
+
+            if let Ok(mut f) = std::fs::File::open(&filepath) {
+                let mut buffer = Vec::new();
+                if f.read_to_end(&mut buffer).is_ok() {
+                    if let Ok(jpeg) = img_parts::jpeg::Jpeg::from_bytes(buffer.into()) {
+                        self.raw_exif = jpeg.segments().iter()
+                            .find(|s: &&img_parts::jpeg::JpegSegment| s.marker() == 0xE1)
+                            .map(|s: &img_parts::jpeg::JpegSegment| s.contents().to_vec());
+                    }
+                }
+            } else {
+                self.raw_exif = None;
+            }
+
             self.exif = get_exif(&filepath);
             if let Some(exif) = &self.exif {
                 if let Some(field) = exif.get_field(exif::Tag::XResolution, exif::In::PRIMARY) {

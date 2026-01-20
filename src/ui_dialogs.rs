@@ -376,6 +376,32 @@ impl ImageViewer {
                                 }
                             }
                         });
+                        if self.exif.is_some() {
+                            ui.separator();
+                            if ui.button("EXIF adatok részletezése").clicked() {
+                                self.show_exif_details = !self.show_exif_details;
+                            }
+
+                            if self.show_exif_details {
+                                egui::ScrollArea::vertical()
+                                    .max_height(300.0) // Korlátozzuk a magasságot, hogy ne nyúljon túl
+                                    .show(ui, |ui| {
+                                        ui.group(|ui| {
+                                            if let Some(exif_data) = &self.exif {
+                                                for field in exif_data.fields() {
+                                                    ui.horizontal(|ui| {
+                                                        // Tag neve (pl. "Make", "DateTime")
+                                                        ui.label(egui::RichText::new(format!("{}:", field.tag)).strong());
+                                                        
+                                                        // Tag értéke (szépen formázva az exif láda által)
+                                                        ui.label(field.display_value().with_unit(exif_data).to_string());
+                                                    });
+                                                }
+                                            }
+                                        });
+                                    });
+                            }
+                        }
                 });
         }
 
@@ -386,8 +412,35 @@ impl ImageViewer {
             .open(&mut dialog_copy) // Bezáró gomb (X) kezelése
             .resizable(false)
             .show(ctx, |ui| {
-                ui.spacing_mut().slider_width = 300.0; 
-                ui.label(egui::RichText::new("Global Corrections").strong());
+                ui.spacing_mut().slider_width = 300.0;
+
+                 ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Global Corrections").strong());
+                    ui.add_space(135.0); 
+                    ui.label("Channels:");
+                        ui.style_mut().spacing.item_spacing.x = 2.0; // Szorosabb gombok
+                        if ui.selectable_label(self.color_settings.invert, " INV ").clicked() {
+                            self.color_settings.invert = !self.color_settings.invert;
+                            changed = true;
+                        }
+                        ui.add_space(10.0);
+                        let r_btn = ui.selectable_label(self.color_settings.show_r, " R ");
+                        if r_btn.clicked() {
+                            self.color_settings.show_r = !self.color_settings.show_r;
+                            changed = true;
+                        }
+                        let g_btn = ui.selectable_label(self.color_settings.show_g, " G ");
+                        if g_btn.clicked() {
+                            self.color_settings.show_g = !self.color_settings.show_g;
+                            changed = true;
+                        }
+                        let b_btn = ui.selectable_label(self.color_settings.show_b, " B ");
+                        if b_btn.clicked() {
+                            self.color_settings.show_b = !self.color_settings.show_b;
+                            changed = true;
+                        }
+                });
+
                 let gam = ui.add(egui::Slider::new(
                     &mut self.color_settings.gamma, 0.1..=3.0)
                     .text("Gamma"));
@@ -414,7 +467,7 @@ impl ImageViewer {
                         changed = true;
                     }
                 }
-                //ui.separator();
+                ui.separator();
 
                 // --- HSV (Színvilág) ---
                 //ui.label(egui::RichText::new("Hsv/Oklab Color Shift").strong());

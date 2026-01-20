@@ -11,7 +11,7 @@ TODO
 */
 
 // disable terminal window beyond graphic window in release version
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+//#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod gpu_colors;
 mod colors;
@@ -81,6 +81,8 @@ fn main() -> eframe::Result<()> {
 struct ImageViewer {
     pub image_full_path: Option<PathBuf>, // a kép neve a teljes utvonallal
     pub file_meta: Option<fs::Metadata>,
+    pub exif: Option<exif::Exif>,
+    pub raw_exif: Option<Vec<u8>>,      // A nyers blokk (mentéshez)
     pub image_name: String, // kép neve a könyvtár nélkül
     pub image_format: SaveFormat,
     pub image_folder: Option<PathBuf>,     // a képek könyvtára
@@ -108,7 +110,6 @@ struct ImageViewer {
     pub refit_reopen: bool,
     pub fit_open: bool,
     pub same_correction_open: bool,
-    pub exif: Option<exif::Exif>,
     pub save_original: bool,
     pub bg_style: BackgroundStyle,
     pub config: AppSettings,
@@ -116,6 +117,7 @@ struct ImageViewer {
     pub recent_file_modified: bool,
     pub recent_window_size: egui::Vec2,
     pub show_recent_window: bool,
+    pub show_exif_details: bool,
     pub is_animated: bool,    // Ez a fájl animálható-e?
     pub anim_playing: bool,   // Fut-e most az animáció?
     pub anim_loop: bool,      // Ismétlődjön-e (default: true)?
@@ -133,6 +135,8 @@ impl Default for ImageViewer {
         Self {
             image_full_path: None,
             file_meta: None,
+            exif: None,
+            raw_exif: None,
             image_name: "".to_string(),
             image_format: SaveFormat::Bmp,
             image_folder: None,
@@ -161,7 +165,6 @@ impl Default for ImageViewer {
             refit_reopen: false,
             fit_open: true,
             same_correction_open: false,
-            exif: None,
             save_original: false, //always set before use
             bg_style: BackgroundStyle::DarkBright,
             config: AppSettings::default(),
@@ -169,6 +172,7 @@ impl Default for ImageViewer {
             recent_file_modified: false,
             recent_window_size: (0.0, 0.0).into(),
             show_recent_window: false,
+            show_exif_details: false,
             is_animated: false,  // Ez a fájl animálható-e?
             anim_playing: false, // Fut-e most az animáció?
             anim_loop: true,     // Ismétlődjön-e (default: true)?
