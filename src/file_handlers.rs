@@ -6,7 +6,6 @@ use std::time::SystemTime;
 use webp::Encoder;
 use image::AnimationDecoder;
 use std::io::{Read, Seek};
-//use std::fs::Metadata;
 
 use crate::colors::*;
 use crate::image_processing::*;
@@ -95,6 +94,43 @@ pub fn load_icon() -> egui::IconData {
     }
 }
 
+fn patch_exif_date(raw_exif: &mut Vec<u8>) {
+    let new_date = chrono::Local::now().format("%Y:%m:%d %H:%M:%S").to_string();
+    /*let date_tag: [u8; 2] = [0x32, 0x01]; // Tag 0x0132 (DateTime) kis-endiánban gyakran így van
+
+    // Keressük meg a 0x0132 taget (Utolsó módosítás ideje)
+    // Megjegyzés: Egy profibb megoldásban végig kellene járni az IFD-ket, 
+    // de a bájtok közötti keresés is működik, ha a formátum stimmel.
+    
+   
+    // Keressünk rá a dátum-szerű mintákra a bájtok között
+    let mut i = 0;
+    while i < raw_exif.len() - 19 {
+        // EXIF dátum minta ellenőrzése (pl: "2024:05:12")
+            // Megtaláltuk az egyik dátumot, írjuk felül az újjal /// de melyik dátumot???
+            for (j, byte) in new_date.as_bytes().iter().enumerate() {
+                raw_exif[i + j] = *byte;
+            }
+            // Ne álljunk meg az elsőnél, mert a DateTimeDigitized-et is frissíthetjük
+            i += 19;
+            break;
+        i += 1;
+    }*/
+}
+
+pub fn patch_exif_resolution(raw_exif: &mut Vec<u8>, resolution : Resolution) {
+    // A felbontást u32 számlálóként tároljuk (nevező = 1)
+    //let x_val = resolution.xres.round() as u32;
+    //let y_val = resolution.yres.round() as u32;
+
+    // Megkeressük a tageket a bájtok között. 
+    // Figyelem: Az EXIF lehet Little Endian (II) vagy Big Endian (MM)!
+    //let is_le = raw_exif.starts_with(b"II"); 
+
+    // Ez a rész bonyolultabb, mert az EXIF tagek után az adatok eltolva (offset) vannak.
+    // De ha a rexiv2 nem opció, a legbiztosabb, ha a betöltéskor 
+    // elmented a tagek pozícióját (offsetjét).
+}
 impl ImageViewer {
 
     pub fn load_animation(&mut self, path: &PathBuf) {
@@ -437,7 +473,7 @@ impl ImageViewer {
 
                         // 2. DPI beírása
                         if let Ok(mut jpeg) = img_parts::jpeg::Jpeg::from_bytes(buffer.into()) {
-                            if let Some(res) = resolution {
+                            if let Some(res) = resolution.clone() {
                                 let dpi_unit = if res.dpi { 1u8 } else { 2u8 }; 
                                 let x_res = res.xres as u16;
                                 let y_res = res.yres as u16;
@@ -468,13 +504,15 @@ impl ImageViewer {
                             }
 
                             // JPEG mentés a nyers EXIF megtartásával
-                            if let Some(raw_exif) = &self.raw_exif {
-                                // Készítünk egy APP1 szegmenst a meglévő bájtokból
+                            if let Some(mut raw_exif) = self.raw_exif.clone() {
+                                patch_exif_date(&mut raw_exif);
+                                if let Some(res) = resolution.clone() {
+                                    patch_exif_resolution(&mut raw_exif, res);
+                                }
                                 let exif_segment = img_parts::jpeg::JpegSegment::new_with_contents(
                                     0xE1, 
                                     img_parts::Bytes::from(raw_exif.clone())
                                 );
-                                // Beszúrjuk a JPEG szegmensek közé (a JFIF APP0 után)
                                 jpeg.segments_mut().insert(1, exif_segment);
                             }
 
