@@ -114,7 +114,7 @@ macro_rules! apply_exif_tags {
             (Sharpness, 0xa40a, "Sharpness"),
             (SubjectDistanceRange, 0xa40c, "SubjectDistanceRange"),
             (UniqueImageID, 0xa420, "UniqueImageID"),
-            (UndefinedTag,0xffff,"UndefinedTag")
+            (UndefinedExifTag,0xffff,"UndefinedExifTag")
         ]);
     };
 
@@ -228,7 +228,7 @@ macro_rules! apply_exif_tags {
             (Sharpness, 0xa40a, "Sharpness"),
             (SubjectDistanceRange, 0xa40c, "SubjectDistanceRange"),
             (UniqueImageID, 0xa420, "UniqueImageID"),
-            (UndefinedTag,0xffff,"UndefinedTag")
+            (UndefinedExifTag,0xffff,"UndefinedExifTag")
         ])
     };
 }
@@ -277,81 +277,83 @@ pub fn get_exif_tag(tag_id: u16) -> Option<ExifTag> {
 macro_rules! apply_gps_tags {
     ($callback:ident) => {
         $callback!((), [
-            (0x00u16,VersionID,        "VersionID",        BTyp, 4),
-            (0x01u16,LatitudeRef,      "LatitudeRef",      ATyp, 2), // 'N' = North | 'S' = South
-            (0x02u16,Latitude,         "Latitude",         RTyp, 3),
-            (0x03u16,LongitudeRef,     "LongitudeRef",     ATyp, 2), // 'E' = East | 'W' = West
-            (0x04u16,Longitude,        "Longitude",        RTyp, 3),
-            (0x05u16,AltitudeRef,      "AltitudeRef",      ATyp, 1), // 0 = Above Sea Level | 1 = Below Sea Level
-            (0x06u16,Altitude,         "Altitude",         RTyp, 1),
-            (0x07u16,TimeStamp,        "TimeStamp",        RTyp, 3),
-            (0x08u16,Satelites,        "Satelites",        ATyp,-1),
-            (0x09u16,Status,           "Status",           ATyp, 2), //'A' = Measurement Active | 'V' = Measurement Void
-            (0x0au16,MeasureMode,      "MeasureMode",      ATyp, 2), // 2 = 2-Dimensional Measurement | 3 = 3-Dimensional Measurement
-            (0x0bu16,DOP,              "DOP",              RTyp, 1),
-            (0x0cu16,SpeedRef,         "SpeedRef",         ATyp, 2), // 'K' = km/h | 'M' = mph | 'N' = knots
-            (0x0du16,Speed,            "Speed",            RTyp, 1),
-            (0x0eu16,TrackRef,         "TrackRef",         ATyp, 2), // 'M' = Magnetic North | 'T' = True North
-            (0x0fu16,Track,            "Track",            RTyp, 1),
-            (0x10u16,ImgDirectionRef,  "ImgDirectionRef",  ATyp, 2), // 'M' = Magnetic North | 'T' = True North
-            (0x11u16,ImgDirection,     "ImgDirection",     RTyp, 1),
-            (0x12u16,MapDatum,         "MapDatum",         ATyp,-1),
-            (0x13u16,DestLatitudeRef,  "DestLatitudeRef",  ATyp, 2), // 'N' = North | 'S' = South
-            (0x14u16,DestLatitude,     "DestLatitude",     RTyp, 3),
-            (0x15u16,DestLongitudeRef, "DestLongitudeRef", ATyp, 2), // 'E' = East | 'W' = West
-            (0x16u16,DestLongitude,    "DestLongitude",    RTyp, 3),
-            (0x17u16,DestBearingRef,   "DestBearingRef",   ATyp, 2), // 'M' = Magnetic North | 'T' = True North
-            (0x18u16,DestBearing,      "DestBearing",      RTyp, 1),
-            (0x19u16,DestDistanceRef,  "DestDistanceRef",  ATyp, 2), // 'K' = Kilometers | 'M' = Miles | 'N' = Nautical Miles
-            (0x1au16,DestDistance,     "DestDistance",     RTyp, 1),
-            (0x1bu16,ProcessingMethod, "ProcessingMethod", UTyp,-1), // "GPS", "CELLID", "WLAN" or "MANUAL"
-            (0x1cu16,AreaInformation,  "AreaInformation",  UTyp,-1),
-            (0x1du16,DateStamp,        "DateStamp",        ATyp,11), // Format is YYYY:mm:dd
-            (0x1eu16,Differential,     "Differential",     STyp, 2), // 0 = No Correction | 1 = Differential Corrected
-            (0x1fu16,HPositioningError,"HPositioningError",RTyp, 1)
+            (VersionID,        0x00u16,"VersionID"        ),
+            (LatitudeRef,      0x01u16,"LatitudeRef"      ), // 'N' = North | 'S' = South
+            (Latitude,         0x02u16,"Latitude"         ),
+            (LongitudeRef,     0x03u16,"LongitudeRef"     ), // 'E' = East | 'W' = West
+            (Longitude,        0x04u16,"Longitude"        ),
+            (AltitudeRef,      0x05u16,"AltitudeRef"      ), // 0 = Above Sea Level | 1 = Below Sea Level
+            (Altitude,         0x06u16,"Altitude"         ),
+            (TimeStamp,        0x07u16,"TimeStamp"        ),
+            (Satelites,        0x08u16,"Satelites"        ),
+            (Status,           0x09u16,"Status"           ), //'A' = Measurement Active | 'V' = Measurement Void
+            (MeasureMode,      0x0au16,"MeasureMode"      ), // 2 = 2-Dimensional Measurement | 3 = 3-Dimensional Measurement
+            (DOP,              0x0bu16,"DOP"              ),
+            (SpeedRef,         0x0cu16,"SpeedRef"         ), // 'K' = km/h | 'M' = mph | 'N' = knots
+            (Speed,            0x0du16,"Speed"            ),
+            (TrackRef,         0x0eu16,"TrackRef"         ), // 'M' = Magnetic North | 'T' = True North
+            (Track,            0x0fu16,"Track"            ),
+            (ImgDirectionRef,  0x10u16,"ImgDirectionRef"  ), // 'M' = Magnetic North | 'T' = True North
+            (ImgDirection,     0x11u16,"ImgDirection"     ),
+            (MapDatum,         0x12u16,"MapDatum"         ),
+            (DestLatitudeRef,  0x13u16,"DestLatitudeRef"  ), // 'N' = North | 'S' = South
+            (DestLatitude,     0x14u16,"DestLatitude"     ),
+            (DestLongitudeRef, 0x15u16,"DestLongitudeRef" ), // 'E' = East | 'W' = West
+            (DestLongitude,    0x16u16,"DestLongitude"    ),
+            (DestBearingRef,   0x17u16,"DestBearingRef"   ), // 'M' = Magnetic North | 'T' = True North
+            (DestBearing,      0x18u16,"DestBearing"      ),
+            (DestDistanceRef,  0x19u16,"DestDistanceRef"  ), // 'K' = Kilometers | 'M' = Miles | 'N' = Nautical Miles
+            (DestDistance,     0x1au16,"DestDistance"     ),
+            (ProcessingMethod, 0x1bu16,"ProcessingMethod" ), // "GPS", "CELLID", "WLAN" or "MANUAL"
+            (AreaInformation,  0x1cu16,"AreaInformation"  ),
+            (DateStamp,        0x1du16,"DateStamp"        ), // Format is YYYY:mm:dd
+            (Differential,     0x1eu16,"Differential"     ), // 0 = No Correction | 1 = Differential Corrected
+            (HPositioningError,0x1fu16,"HPositioningError"),
+            (UndefinedGpsTag,0xffffu16,"UndefinedGpsTag"  )
         ]);
     };
 
     ($callback:ident, $extra:expr) => {
         $callback!($extra, [
-            (0x00u16,VersionID,        "VersionID",        BTyp, 4),
-            (0x01u16,LatitudeRef,      "LatitudeRef",      ATyp, 2), // 'N' = North | 'S' = South
-            (0x02u16,Latitude,         "Latitude",         RTyp, 3),
-            (0x03u16,LongitudeRef,     "LongitudeRef",     ATyp, 2), // 'E' = East | 'W' = West
-            (0x04u16,Longitude,        "Longitude",        RTyp, 3),
-            (0x05u16,AltitudeRef,      "AltitudeRef",      ATyp, 1), // 0 = Above Sea Level | 1 = Below Sea Level
-            (0x06u16,Altitude,         "Altitude",         RTyp, 1),
-            (0x07u16,TimeStamp,        "TimeStamp",        RTyp, 3),
-            (0x08u16,Satelites,        "Satelites",        ATyp,-1),
-            (0x09u16,Status,           "Status",           ATyp, 2), //'A' = Measurement Active | 'V' = Measurement Void
-            (0x0au16,MeasureMode,      "MeasureMode",      ATyp, 2), // 2 = 2-Dimensional Measurement | 3 = 3-Dimensional Measurement
-            (0x0bu16,DOP,              "DOP",              RTyp, 1),
-            (0x0cu16,SpeedRef,         "SpeedRef",         ATyp, 2), // 'K' = km/h | 'M' = mph | 'N' = knots
-            (0x0du16,Speed,            "Speed",            RTyp, 1),
-            (0x0eu16,TrackRef,         "TrackRef",         ATyp, 2), // 'M' = Magnetic North | 'T' = True North
-            (0x0fu16,Track,            "Track",            RTyp, 1),
-            (0x10u16,ImgDirectionRef,  "ImgDirectionRef",  ATyp, 2), // 'M' = Magnetic North | 'T' = True North
-            (0x11u16,ImgDirection,     "ImgDirection",     RTyp, 1),
-            (0x12u16,MapDatum,         "MapDatum",         ATyp,-1),
-            (0x13u16,DestLatitudeRef,  "DestLatitudeRef",  ATyp, 2), // 'N' = North | 'S' = South
-            (0x14u16,DestLatitude,     "DestLatitude",     RTyp, 3),
-            (0x15u16,DestLongitudeRef, "DestLongitudeRef", ATyp, 2), // 'E' = East | 'W' = West
-            (0x16u16,DestLongitude,    "DestLongitude",    RTyp, 3),
-            (0x17u16,DestBearingRef,   "DestBearingRef",   ATyp, 2), // 'M' = Magnetic North | 'T' = True North
-            (0x18u16,DestBearing,      "DestBearing",      RTyp, 1),
-            (0x19u16,DestDistanceRef,  "DestDistanceRef",  ATyp, 2), // 'K' = Kilometers | 'M' = Miles | 'N' = Nautical Miles
-            (0x1au16,DestDistance,     "DestDistance",     RTyp, 1),
-            (0x1bu16,ProcessingMethod, "ProcessingMethod", UTyp,-1), // "GPS", "CELLID", "WLAN" or "MANUAL"
-            (0x1cu16,AreaInformation,  "AreaInformation",  UTyp,-1),
-            (0x1du16,DateStamp,        "DateStamp",        ATyp,11), // Format is YYYY:mm:dd
-            (0x1eu16,Differential,     "Differential",     STyp, 2), // 0 = No Correction | 1 = Differential Corrected
-            (0x1fu16,HPositioningError,"HPositioningError",RTyp, 1)
+            (VersionID,        0x00u16,"VersionID"        ),
+            (LatitudeRef,      0x01u16,"LatitudeRef"      ), // 'N' = North | 'S' = South
+            (Latitude,         0x02u16,"Latitude"         ),
+            (LongitudeRef,     0x03u16,"LongitudeRef"     ), // 'E' = East | 'W' = West
+            (Longitude,        0x04u16,"Longitude"        ),
+            (AltitudeRef,      0x05u16,"AltitudeRef"      ), // 0 = Above Sea Level | 1 = Below Sea Level
+            (Altitude,         0x06u16,"Altitude"         ),
+            (TimeStamp,        0x07u16,"TimeStamp"        ),
+            (Satelites,        0x08u16,"Satelites"        ),
+            (Status,           0x09u16,"Status"           ), //'A' = Measurement Active | 'V' = Measurement Void
+            (MeasureMode,      0x0au16,"MeasureMode"      ), // 2 = 2-Dimensional Measurement | 3 = 3-Dimensional Measurement
+            (DOP,              0x0bu16,"DOP"              ),
+            (SpeedRef,         0x0cu16,"SpeedRef"         ), // 'K' = km/h | 'M' = mph | 'N' = knots
+            (Speed,            0x0du16,"Speed"            ),
+            (TrackRef,         0x0eu16,"TrackRef"         ), // 'M' = Magnetic North | 'T' = True North
+            (Track,            0x0fu16,"Track"            ),
+            (ImgDirectionRef,  0x10u16,"ImgDirectionRef"  ), // 'M' = Magnetic North | 'T' = True North
+            (ImgDirection,     0x11u16,"ImgDirection"     ),
+            (MapDatum,         0x12u16,"MapDatum"         ),
+            (DestLatitudeRef,  0x13u16,"DestLatitudeRef"  ), // 'N' = North | 'S' = South
+            (DestLatitude,     0x14u16,"DestLatitude"     ),
+            (DestLongitudeRef, 0x15u16,"DestLongitudeRef" ), // 'E' = East | 'W' = West
+            (DestLongitude,    0x16u16,"DestLongitude"    ),
+            (DestBearingRef,   0x17u16,"DestBearingRef"   ), // 'M' = Magnetic North | 'T' = True North
+            (DestBearing,      0x18u16,"DestBearing"      ),
+            (DestDistanceRef,  0x19u16,"DestDistanceRef"  ), // 'K' = Kilometers | 'M' = Miles | 'N' = Nautical Miles
+            (DestDistance,     0x1au16,"DestDistance"     ),
+            (ProcessingMethod, 0x1bu16,"ProcessingMethod" ), // "GPS", "CELLID", "WLAN" or "MANUAL"
+            (AreaInformation,  0x1cu16,"AreaInformation"  ),
+            (DateStamp,        0x1du16,"DateStamp"        ), // Format is YYYY:mm:dd
+            (Differential,     0x1eu16,"Differential"     ), // 0 = No Correction | 1 = Differential Corrected
+            (HPositioningError,0x1fu16,"HPositioningError"),
+            (UndefinedGpsTag,0xffffu16,"UndefinedGpsTag"  )
         ])
     };
 }
 
 macro_rules! make_gps_enum {
-    ($unused:tt, [ $( ($id:expr ,$name:ident, $str:expr, $rtyp:ident, $len:expr) ),* ]) => {
+    ($unused:tt, [ $( ($name:ident, $id:expr, $str:expr) ),* ]) => {
         #[derive(Serialize, Deserialize, Clone, Debug)]
         #[repr(u16)]
         #[allow(dead_code)]
@@ -364,26 +366,22 @@ macro_rules! make_gps_enum {
 apply_gps_tags!{ make_gps_enum }
 
 macro_rules! make_gps_struct {
-    ($unused:tt, [ $( ($id:expr ,$name:ident, $str:expr, $rtyp:ident, $len:expr) ),* ]) => {
+    ($unused:tt, [ $( ($name:ident, $id:expr, $str:expr) ),* ]) => {
 
-        impl GpsBlock {
+        impl ExifBlock {
             fn init_gps_tags(&mut self) {
-                $( self.gps_tags.push( GpsTag{ id: $id, enu: GpsTagId:: $name, name: $str.to_string(), rtyp: Rtype:: $rtyp, len: $len }); )*
+                $( self.gps_tags.push( GpsTag{ id: $id, enu: GpsTagId:: $name, name: $str.to_string() }); )*
             }
         }
     };
 }
 apply_gps_tags!{ make_gps_struct }
 
-
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum Rtype {
-    RTyp,
-    ATyp,
-    BTyp,
-    STyp,
-    UTyp,
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GpsTag {
+    pub id: u16,
+    pub enu: GpsTagId,
+    pub name: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -432,22 +430,21 @@ impl FMT {
     }
 }
 
-const bytesperformat: [usize; 13] = [0,1,1,2,4,8,1,1,2,4,8,4,8];
-const           asciiformat: [i32; 13] = [0,0,1,0,0,0,0,1,0,0,0,0,0];
+const BYTESPERFORMAT: [usize; 13] = [0,1,1,2,4,8,1,1,2,4,8,4,8];
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[allow(non_camel_case_types)]
 pub struct ExifBlock {
-    exif_tags: Vec<ExifTag>,
-    raw_exif: Vec<u8>,
-    json_data: Option<Map<String, Value>>,
-    lastexifrefd: usize,
-    dirwiththumbnailptrs: usize,
-    focalplanexres :f64,
-    focalplaneunits: f64,
-    exifimagewidth: usize,
-    motorola_order: bool,
-    nesting_level: i32,
+    pub exif_tags: Vec<ExifTag>,
+    pub gps_tags: Vec<GpsTag>,
+    pub raw_exif: Vec<u8>,
+    pub json_data: Option<Map<String, Value>>,
+    pub lastexifrefd: usize,
+    pub dirwiththumbnailptrs: usize,
+    pub exifimagewidth: usize,
+    pub motorola_order: bool,
+    pub nesting_level: i32,
+    pub make : String,
 }
 
 
@@ -455,17 +452,18 @@ impl Default for ExifBlock {
     fn default() -> Self {
         let mut tmp = Self {
             exif_tags: Vec::new(),
+            gps_tags: Vec::new(),
             raw_exif: Vec::new(),
             json_data: None,
             lastexifrefd: 0,
             dirwiththumbnailptrs: 0,
-            focalplanexres :0.0,
-            focalplaneunits: 0.0,
             exifimagewidth: 0,
             motorola_order: false, //true: MM Big-endian, false: II Little-endian
             nesting_level: 0,
+            make : "".into(),
         };
         tmp.init_exif_tags();
+        tmp.init_gps_tags();
         tmp
     }
 }
@@ -473,15 +471,22 @@ impl Default for ExifBlock {
 
 impl ExifBlock {
     
-    pub fn get_name(&self, id : u16) -> Option<&String> {
-        for tag in &self.exif_tags {
-            if tag.id == id { return Some(&tag.name); }
+    pub fn get_exif_tag(&self, id : u16) -> ExifTag {
+        if let Some(tag) = self.exif_tags.iter().find(|t| t.id == id) {
+            tag.clone()
         }
-        None
+        else {
+            ExifTag { id: id, enu: ExifTagId::UndefinedExifTag, name: format!("_{}",id) }
+        }
     }
     
-    pub fn get_tag(&self, id : u16) -> Option<&ExifTag> {
-        self.exif_tags.iter().find(|t| t.id == id)
+    pub fn get_gps_tag(&self, id : u16) -> GpsTag {
+        if let Some(tag) = self.gps_tags.iter().find(|t| t.id == id) {
+            tag.clone()
+        }
+        else {
+            GpsTag { id: id, enu: GpsTagId::UndefinedGpsTag, name: format!("_{}",id) }
+        }
     }
     
     fn read_buff_u16(&self, buff :&[u8], pos: usize) -> u16 {
@@ -571,7 +576,7 @@ impl ExifBlock {
     }
 
 
-    fn dir_entry_addr(start: &usize, entry: &usize) -> usize {
+    fn dir_entry_addr(start: usize, entry: usize) -> usize {
         start + 2 + 12 * entry
     }
 
@@ -586,7 +591,7 @@ impl ExifBlock {
             return Err("Corrupt exif header: Maximum directory nesting exceeded".into());
         }
 
-        let dirend = Self::dir_entry_addr(&dirstart, &numdirentries);
+        let dirend = Self::dir_entry_addr(dirstart, numdirentries);
         if dirend+4 > offsetbase+exiflength {
             if dirend+2 == offsetbase+exiflength || dirend == offsetbase+exiflength {
                 // version 1.3 of jhead would truncate a bit too much.
@@ -603,16 +608,15 @@ impl ExifBlock {
 
         for de_idx in 0..numdirentries {
             let idx = de_idx as usize;
-            let direntry = Self::dir_entry_addr(&dirstart, &idx);
+            let direntry = Self::dir_entry_addr(dirstart, idx);
             
-            let tag = self.get_tag(self.read_u16(direntry))
-                .unwrap_or_else(|| self.get_tag(0xffff).expect("Undefined tag missing"));
+            let tag = self.get_exif_tag(self.read_u16(direntry));
             let format = FMT::from(self.read_u16(direntry+2));
             if format >= FMT::NUM_FORMATS {
                 return Err(format!("Corrupt exif header: Illegal number format {:?} for tag {:?}", format, tag.name));
             }
             let components = self.read_u32(direntry+4) as usize;
-            let bytecount = components * bytesperformat[format.clone() as usize];
+            let bytecount = components * BYTESPERFORMAT[format.clone() as usize];
             
             let mut json_tag: Map<String, Value> = Map::new();
             json_tag.insert("type".to_string(),json!(format));
@@ -636,7 +640,7 @@ impl ExifBlock {
                 self.lastexifrefd = valueptr+bytecount;
             }
 
-            match tag.enu.clone() {
+            match tag.enu {
                 ExifTagId::GPSInfo => {
                         let subdirstart = offsetbase + self.read_u32(valueptr) as usize;
                         if subdirstart < offsetbase || subdirstart > offsetbase+exiflength {
@@ -662,101 +666,25 @@ impl ExifBlock {
                             return Err("Corrupt exif header: Illegal exif or interop offset directory link".into());
                         }else{
                             self.nesting_level+=1;
-                            self.process_exif_dir(subdirstart, offsetbase, exiflength);
+                            let json = self.process_exif_dir(subdirstart, offsetbase, exiflength);
                             self.nesting_level-=1;
+                            result.insert("ExifDir".to_string(), json!(json));
                         }
                         continue;
                     },
                  _ => {},
                 }
 
-            match format {
-                FMT::UNDEFINED | FMT::STRING =>{
-                    let raw_bytes = &self.raw_exif[valueptr..valueptr + bytecount];
-                    let clean_bytes = raw_bytes.split(|&b| b == 0).next().unwrap_or(&[]);
-                    let text = String::from_utf8_lossy(clean_bytes).to_string();
-                    json_tag.insert("val".to_string(), json!(text));
-                    result.insert(tag.name.clone(), json!(json_tag));
-                    if tag.enu.clone() == ExifTagId::MAKE {
-                        make = text;
-                    }
-                    continue;
-                },
-                FMT::BYTE   => {
-                    //if tag.enu == ExifTagId::MAKER_NOTE && maker == "Canon" {
-                    //    let json = process_maker_note(valueptr, bytecount, offsetbase, exiflength)?;
-                    //    result.insert("MAKER_NOTE".to_string(), json!(json));
-                    //    continue;
-                    //}
-                    let raw_bytes = &self.raw_exif[valueptr..valueptr + bytecount];
-                    let value = if bytecount<=120 { json!(raw_bytes) }
-                    else {
-                        json!(general_purpose::STANDARD.encode(raw_bytes))
-                    };
-                    json_tag.insert("val".to_string(), value);
-                    result.insert(tag.name.clone(), json!(json_tag));
-                    continue;
-                },
-                FMT::SBYTE  => {
-                    let value = if bytecount<=120 {
-                        let signed_bytes: Vec<i8> = self.raw_exif[valueptr..valueptr + bytecount]
-                            .iter().map(|&b| b as i8).collect();
-                        json!(signed_bytes)
-                    }
-                    else {
-                        let raw_bytes = &self.raw_exif[valueptr..valueptr + bytecount];
-                        json!(general_purpose::STANDARD.encode(raw_bytes))
-                    };
-                    json_tag.insert("val".to_string(), value);
-                    result.insert(tag.name.clone(), json!(json_tag));
-                    continue;
-                    }
-                FMT::USHORT => {
-                    json_tag.insert("val".to_string(), json!(self.read_u16(valueptr)));
-                    result.insert(tag.name.clone(),  json!(json_tag));
-                    continue;
-                    }
-                FMT::SSHORT => {
-                    json_tag.insert("val".to_string(), json!(self.read_u16(valueptr) as i16));
-                    result.insert(tag.name.clone(),  json!(json_tag));
-                    continue;
-                    }
-                FMT::ULONG  => {
-                    json_tag.insert("val".to_string(), json!(self.read_u32(valueptr)));
-                    result.insert(tag.name.clone(),  json!(json_tag));
-                    continue;
-                    }
-                FMT::SLONG  => {
-                    json_tag.insert("val".to_string(), json!(self.read_i32(valueptr)));
-                    result.insert(tag.name.clone(),  json!(json_tag));
-                    continue;
-                    }
-                FMT::URATIONAL | FMT::SRATIONAL => {
-                    let num = self.read_u32(valueptr);
-                    let den = self.read_u32(valueptr + 4);
-                    json_tag.insert("val".to_string(), json!([num, den]));
-                    result.insert(tag.name.clone(), json!(json_tag));
-                    continue;
-                },
-                FMT::SINGLE => {
-                    json_tag.insert("val".to_string(), json!(self.read_f32(valueptr)));
-                    result.insert(tag.name.clone(), json!(json_tag));
-                    continue;
-                    }
-                FMT::DOUBLE => {
-                    json_tag.insert("val".to_string(), json!(self.read_f64(valueptr)));
-                    result.insert(tag.name.clone(), json!(json_tag));
-                    continue;
-                    }
-                _ => json!(null), // Ismeretlen formátum esetén
-            };
+            json_tag.insert("val".into(), self.get_entry_value(format,valueptr,bytecount,
+                    tag.enu == ExifTagId::MAKE,   tag.enu == ExifTagId::MAKER_NOTE && self.make == "Canon"));
+            result.insert(tag.name, json!(json_tag));
 
         }
 
         // In addition to linking to subdirectories via exif tags,
         // there's also a potential link to another directory at the end of each
         // directory.  this has got to be the result of a comitee!
-        if Self::dir_entry_addr(&dirstart, &numdirentries) + 4 <= offsetbase+exiflength {
+        if Self::dir_entry_addr(dirstart, numdirentries) + 4 <= offsetbase+exiflength {
              let offset = self.read_u32(dirstart+2+12*numdirentries) as usize;
              if offset != 0 {
                 let subdirstart = offsetbase + offset;
@@ -773,8 +701,9 @@ impl ExifBlock {
                    if subdirstart <= offsetbase+exiflength {
                       //inf->exiftext("%*ccontinued ",level*4,' ');
                       self.nesting_level+=1;
-                      self.process_exif_dir(subdirstart, offsetbase, exiflength);
+                      let json = self.process_exif_dir(subdirstart, offsetbase, exiflength);
                       self.nesting_level-=1;
+                      result.insert("ExtraExifDir".to_string(), json!(json));
                    }
                 }
              }
@@ -788,51 +717,117 @@ impl ExifBlock {
                 //inf->exifinfo.thumbnailpointer = offsetbase + thumbnailoffset;
                 //inf->exifinfo.thumbnailsize = thumbnailsize;
                 //inf->ExifText("%*cThumbnail size [ %d bytes ]\n",level*4,' ',ThumbnailSize);
+                let raw_bytes = &self.raw_exif[thumbnailoffset..thumbnailoffset + thumbnailsize];
+                let value = json!(general_purpose::STANDARD.encode(raw_bytes));
+                result.insert("Thumbnail".to_string(), value);
             }
         }
         Ok(result)
     }
-    
+
+
+
+    fn get_entry_value(&mut self, format: FMT, valueptr: usize, bytecount: usize, is_make: bool, is_note: bool) -> Value {
+        match format {
+            FMT::UNDEFINED | FMT::STRING => {
+                let raw_bytes = &self.raw_exif[valueptr..valueptr + bytecount];
+                let clean_bytes = raw_bytes.split(|&b| b == 0).next().unwrap_or(&[]);
+                let text = String::from_utf8_lossy(clean_bytes).to_string();
+                if is_make {
+                    self.make = text.clone();
+                }
+                json!(text)
+            },
+            FMT::BYTE   => {
+                //if is_note {
+                //    json!(process_maker_note(valueptr, bytecount, offsetbase, exiflength))
+                //}
+                let raw_bytes = &self.raw_exif[valueptr..valueptr + bytecount];
+                if bytecount<=120 { json!(raw_bytes) }
+                else { json!(general_purpose::STANDARD.encode(raw_bytes)) }
+            },
+            FMT::SBYTE  =>
+                if bytecount<=120 {
+                    let signed_bytes: Vec<i8> = self.raw_exif[valueptr..valueptr + bytecount]
+                        .iter().map(|&b| b as i8).collect();
+                    json!(signed_bytes)
+                }
+                else {
+                    let raw_bytes = &self.raw_exif[valueptr..valueptr + bytecount];
+                    json!(general_purpose::STANDARD.encode(raw_bytes))
+                },
+            FMT::USHORT => json!(self.read_u16(valueptr)),
+            FMT::SSHORT => json!(self.read_u16(valueptr) as i16),
+            FMT::ULONG  => json!(self.read_u32(valueptr)),
+            FMT::SLONG  => json!(self.read_i32(valueptr)),
+            FMT::URATIONAL | FMT::SRATIONAL => {
+                let num = self.read_u32(valueptr);
+                let den = self.read_u32(valueptr + 4);
+                json!([num, den])
+            },
+            FMT::SINGLE => json!(self.read_f32(valueptr)),
+            FMT::DOUBLE => json!(self.read_f64(valueptr)),
+            _ => json!(null) // Ismeretlen formátum esetén
+        }
+    }
+
+
+
     //fn PrintFormatNumber(&mut self,valueptr: usize, format: FMT, bytecount: i32) {}
     fn process_gps_info(&mut self, dirstart: usize, offsetbase: usize, exiflength: usize) ->  Result<Map<String, Value>, String>  {
+        let numdirentries = self.read_u16(dirstart) as usize;
+        let dirend = Self::dir_entry_addr(dirstart, numdirentries);
+        if dirend > (offsetbase+exiflength) {
+            // Note: Files that had thumbnails trimmed with jhead 1.3 or earlier
+            // might trigger this.
+            return Err("Corrupt exif header: Illegally sized directory".into());
+        }
+
         let mut result = Map::new();
+
+        for de in 0..numdirentries {
+            let idx = de as usize;
+            let direntry = Self::dir_entry_addr(dirstart, idx);
+            let tag = self.get_gps_tag(self.read_u16(direntry));
+            let format = FMT::from(self.read_u16(direntry+2));
+            if format >= FMT::NUM_FORMATS {
+                return Err(format!("Corrupt exif header: Illegal number format {:?} for tag {:?}", format, tag.name));
+            }
+            let components = self.read_u32(direntry+4) as usize;
+            let bytecount = components * BYTESPERFORMAT[format.clone() as usize];
+
+            let mut json_tag: Map<String, Value> = Map::new();
+            json_tag.insert("type".to_string(),json!(format));
+            json_tag.insert("count".to_string(),json!(components));
+            
+            let valueptr = if bytecount > 4 {
+                // if its bigger than 4 bytes, the dir entry contains an offset.
+                let offsetval = self.read_u32(direntry+8) as usize;
+                if offsetval+bytecount > exiflength {
+                    return Err(format!("Corrupt exif header: Illegal value pointer for tag {:?}",tag.name));
+                }
+                offsetbase+offsetval
+            }else{
+                // 4 bytes or less and value is in the dir entry itself
+                direntry+8
+            };
+
+            if self.lastexifrefd < valueptr+bytecount {
+                // keep track of last byte in the exif header that was actually referenced.
+                // that way, we know where the discardable thumbnail data begins.
+                self.lastexifrefd = valueptr+bytecount;
+            }
+
+            json_tag.insert("val".into(), self.get_entry_value(format,valueptr,bytecount, false, false));
+            result.insert(tag.name.clone(), json!(json_tag));
+
+        }
+        
         Ok(result)
     }
 
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct GpsTag {
-    pub id: u16,
-    pub enu: GpsTagId,
-    pub name: String,
-    pub rtyp: Rtype,
-    pub len: i8,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct GpsBlock {
-    pub gps_tags: Vec<GpsTag>,
-}
-
-impl Default for GpsBlock {
-    fn default() -> Self {
-        let mut tmp = Self {
-            gps_tags: Vec::new(),
-        };
-        tmp.init_gps_tags();
-        tmp
-    }
-}
-
-impl GpsBlock {
-    pub fn GetName(&self, id : u16) -> Option<&String> {
-        for tag in &self.gps_tags {
-            if tag.id == id { return Some(&tag.name); }
-        }
-        None
-    }
-}
 
 /*
 JMESSAGE(JWRN_EXIF_1, "Corrupt exif header: Maximum directory nesting exceeded)")

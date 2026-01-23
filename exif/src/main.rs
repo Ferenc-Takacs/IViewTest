@@ -4,7 +4,6 @@ use std::io::Read;
 
 fn main() {
     let mut exifblock = ExifBlock::default();
-    let gb = GpsBlock::default();
     let mut dialog = rfd::FileDialog::new()
         .add_filter(
             "Images",
@@ -33,7 +32,10 @@ fn main() {
                         .map(|s: &img_parts::jpeg::JpegSegment| s.contents().to_vec());
                     if let Some(data) = raw_exif {
                         let len = data.len();
-                        let result = exifblock.open( &data, len);
+                        if let Ok(result) = exifblock.open( &data, len) {
+                            let szep_json = serde_json::to_string_pretty(&result.json_data.unwrap()).expect("Hiba a JSON formázásakor");
+                            println!("{}", szep_json);
+                        }
                     }
                 }
             }
@@ -42,5 +44,7 @@ fn main() {
         }
     }
         
-    println!("Hello, world! Bye!");
+    println!("Hello, world!");
+//    println!("{:?}",exifblock);
+    println!("Bye!");
 }
