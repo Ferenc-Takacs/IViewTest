@@ -60,6 +60,7 @@ impl ImageViewer {
                 if let Some(delay) = anim.delays.get(self.current_frame) {
                     if elapsed >= *delay {
                         // Képkocka váltás
+                        let old_frame = self.current_frame;
 
                         if self.current_frame + 1 >= anim.total_frames {
                             if self.anim_loop {
@@ -73,10 +74,12 @@ impl ImageViewer {
                         self.last_frame_time = std::time::Instant::now();
 
                         // Textúra frissítése a megjelenítéshez
-                        self.original_image = Some(anim.anim_frames[self.current_frame].clone());
-                        self.review(ctx, true, false);
-                        // Azonnali újrarajzolás a váltás után
-                        ctx.request_repaint();
+                        if self.current_frame != old_frame {
+                            self.original_image = Some(anim.anim_frames[self.current_frame].clone());
+                            self.review(ctx, true, false);
+                            // Azonnali újrarajzolás a váltás után
+                            ctx.request_repaint();
+                        }
                         
                     } else {
                         // Várunk a maradék időre

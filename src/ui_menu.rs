@@ -475,14 +475,10 @@ impl ImageViewer {
                         || ui.input(|i| i.key_pressed(egui::Key::ArrowRight))
                     {
                         self.anim_playing = false;
-                        if anim.total_frames > 0 {
-                            
-                            // Textúra frissítése a megjelenítéshez
-                            frame_copy = Some(anim.anim_frames[self.current_frame].clone());
-                            
-                            //self.current_frame = (self.current_frame + 1) % anim.total_frames;
-                            //self.texture = Some(anim.anim_frames[self.current_frame].clone());
-                        }
+                        self.current_frame = (self.current_frame + 1) % anim.total_frames;
+                        // Textúra frissítése a megjelenítéshez
+                        frame_copy = Some(anim.anim_frames[self.current_frame].clone());
+                        
                     }
                     ui.label(format!(
                         "Frame: {} / {}",

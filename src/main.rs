@@ -82,9 +82,7 @@ fn main() -> eframe::Result<()> {
 struct ImageViewer {
     pub image_full_path: Option<PathBuf>, // a kép neve a teljes utvonallal
     pub file_meta: Option<fs::Metadata>,
-    //pub exif: Option<exif::Exif>,
     pub exif: Option<ExifBlock>,
-    //pub raw_exif: Option<Vec<u8>>,      // A nyers blokk (mentéshez)
     pub image_name: String, // kép neve a könyvtár nélkül
     pub image_format: SaveFormat,
     pub image_folder: Option<PathBuf>,     // a képek könyvtára
@@ -130,6 +128,7 @@ struct ImageViewer {
     pub gpu_interface : Option<gpu_colors::GpuInterface>,
     pub gpu_tried_init: bool,
     pub use_gpu: bool,
+    pub modified: bool,
 }
 
 impl Default for ImageViewer {
@@ -185,6 +184,7 @@ impl Default for ImageViewer {
             gpu_interface : None,
             gpu_tried_init: false,
             use_gpu: true,
+            modified: false,
         }
     }
 }

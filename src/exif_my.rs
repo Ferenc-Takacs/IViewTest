@@ -492,7 +492,7 @@ impl FMT {
             _ => FMT::NUM_FORMATS,
         }
     }
-    pub fn to(v:&str) -> Self {
+    /*pub fn to(v:&str) -> Self {
         match v {
             "NONE"              => FMT::NONE,
             "BYTE"              => FMT::BYTE,
@@ -510,7 +510,7 @@ impl FMT {
             "UTF_8"             => FMT::UTF_8,
             _ => FMT::NUM_FORMATS,
         }
-    }
+    }*/
 }
 
 const BYTESPERFORMAT: [usize; 13] = [0,1,1,2,4,8,1,1,2,4,8,4,8];
@@ -530,11 +530,11 @@ pub struct ExifBlock {
     pub motorola_order: bool,
     pub nesting_level: i32,
     pub make : String,
-    pub date_offset: usize,
+    /*pub date_offset: usize,
     pub xres_offset: usize,
     pub yres_offset: usize,
     pub orient_offset: usize,
-    pub resunit_offset: usize,
+    pub resunit_offset: usize,*/
     pub thumbnailsize: usize,
     pub thumbnailoffset: usize,
 }
@@ -555,11 +555,11 @@ impl Default for ExifBlock {
             motorola_order: false, //true: MM Big-endian, false: II Little-endian
             nesting_level: 0,
             make : "".into(),
-            date_offset: 0,
+            /*date_offset: 0,
             xres_offset: 0,
             yres_offset: 0,
             orient_offset: 0,
-            resunit_offset: 0,
+            resunit_offset: 0,*/
             thumbnailsize: 0,
             thumbnailoffset: 0,
         };
@@ -592,7 +592,7 @@ impl ExifBlock {
             .map(|entry| &entry.value)
     }
 
-    pub fn findTag( &self, name: &str, occurrence: usize, case_sensitive: bool ) -> Option<ExifTagEntry> {
+    pub fn find_tag( &self, name: &str, occurrence: usize, case_sensitive: bool ) -> Option<ExifTagEntry> {
         self.entry_data_vector.iter()
             .filter(|entry| {
                 if case_sensitive {
@@ -743,7 +743,7 @@ impl ExifBlock {
     }
 
     pub fn patch_exifdata(&mut self, xres: f32, yres: f32, w: u32, h: u32) {
-        if let Some(entry) = self.findTag("XResolution",0,true) {
+        if let Some(entry) = self.find_tag("XResolution",0,true) {
             let (nxf,nx) = if ((xres+0.5) as u32) as f32 == xres { (1.0,1u32) } else { (100000.0,100000u32) };
             let dx = (xres * nxf + 0.5) as u32;
             let mut bytes = if self.motorola_order { dx.to_be_bytes() } else { dx.to_le_bytes() };
@@ -752,7 +752,7 @@ impl ExifBlock {
             self.raw_exif[entry.offset+4..entry.offset+8].copy_from_slice(&bytes);
         }
 
-        if let Some(entry) = self.findTag("YResolution",0,true) {
+        if let Some(entry) = self.find_tag("YResolution",0,true) {
             let (nyf,ny) = if ((yres+0.5) as u32) as f32 == yres { (1.0,1u32) } else { (100000.0,100000u32) };
             let dy = (yres * nyf + 0.5) as u32;
             let mut bytes = if self.motorola_order { dy.to_be_bytes() } else { dy.to_le_bytes() };
@@ -761,13 +761,13 @@ impl ExifBlock {
             self.raw_exif[entry.offset+4..entry.offset+8].copy_from_slice(&bytes);
         }
 
-        if let Some(entry) = self.findTag("Orientation",0,true) {
+        if let Some(entry) = self.find_tag("Orientation",0,true) {
             let ori = 1u16;
             let bytes = if self.motorola_order { ori.to_be_bytes() } else { ori.to_le_bytes() };
             self.raw_exif[entry.offset..entry.offset+2].copy_from_slice(&bytes);
         }
 
-        if let Some(entry) = self.findTag("DateTime",0,true) {
+        if let Some(entry) = self.find_tag("DateTime",0,true) {
             let current_date = chrono::Local::now().format("%Y:%m:%d %H:%M:%S").to_string();
             let bytes = current_date.as_bytes();
             if bytes.len() <= 20 {
@@ -775,25 +775,25 @@ impl ExifBlock {
             }
         }
 
-        if let Some(entry) = self.findTag("PixelXDimension",0,true) {
+        if let Some(entry) = self.find_tag("PixelXDimension",0,true) {
             let bytes = if self.motorola_order { w.to_be_bytes() } else { w.to_le_bytes() };
             self.raw_exif[entry.offset..entry.offset+4].copy_from_slice(&bytes);
         }
-        else if let Some(entry) = self.findTag("ImageWidth",0,true) {
+        else if let Some(entry) = self.find_tag("ImageWidth",0,true) {
             let bytes = if self.motorola_order { w.to_be_bytes() } else { w.to_le_bytes() };
             self.raw_exif[entry.offset..entry.offset+4].copy_from_slice(&bytes);
         }
 
-        if let Some(entry) = self.findTag("PixelYDimension",0,true) {
+        if let Some(entry) = self.find_tag("PixelYDimension",0,true) {
             let bytes = if self.motorola_order { h.to_be_bytes() } else { h.to_le_bytes() };
             self.raw_exif[entry.offset..entry.offset+4].copy_from_slice(&bytes);
         }
-        else if let Some(entry) = self.findTag("ImageLength",0,true) {
+        else if let Some(entry) = self.find_tag("ImageLength",0,true) {
             let bytes = if self.motorola_order { h.to_be_bytes() } else { h.to_le_bytes() };
             self.raw_exif[entry.offset..entry.offset+4].copy_from_slice(&bytes);
         }
 
-        if let Some(entry) = self.findTag("Orientation",0,true) {
+        if let Some(entry) = self.find_tag("Orientation",0,true) {
             let ori = 1u16;
             let bytes = if self.motorola_order { ori.to_be_bytes() } else { ori.to_le_bytes() };
             self.raw_exif[entry.offset..entry.offset+2].copy_from_slice(&bytes);
@@ -942,7 +942,7 @@ impl ExifBlock {
                 ExifTagId::ThumbnailLength => {
                         self.thumbnailsize = self.convert_format_usize(valueptr, &format);
                     },
-                ExifTagId::DateTime => {
+                /*ExifTagId::DateTime => {
                         self.date_offset = valueptr;
                     },
                 ExifTagId::ResolutionUnit => {
@@ -959,7 +959,7 @@ impl ExifBlock {
                             println!("dupla orient");
                         }
                         self.orient_offset = valueptr;
-                    },
+                    },*/
                  _ => {},
                 }
 

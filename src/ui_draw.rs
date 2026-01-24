@@ -92,7 +92,9 @@ impl ImageViewer {
                     let image_size = self.image_size;
                     let display_size_netto = self.display_size_netto;
                     let current_offset = self.aktualis_offset;
-                    let title = format!( "IView - {}. {}  {}", self.actual_index, self.image_name, self.magnify );
+                    let star = if self.modified { "*" } else { " " };
+                    let title = format!( "IView - {}. {}{}  {}", self.actual_index, self.image_name, star, self.magnify );
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
                     
                     let output = egui::Frame::canvas(ui.style())
                         .fill(egui::Color32::TRANSPARENT)
@@ -105,7 +107,6 @@ impl ImageViewer {
                             let mut off = egui::Vec2 { x: 0.0, y: 0.0 };
 
                             if zoom != 1.0 || self.first_appear > 0 {
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
 
                                 let ui_rect = ui.max_rect();
                                 let inside = ui_rect.max - ui_rect.min;
@@ -161,8 +162,8 @@ impl ImageViewer {
                         
                     self.aktualis_offset = output.state.offset;
 
-                    // Csak akkor fut le, ha a Ctrl ÉS a Shift le van nyomva
-                    if ctx.input(|i| i.modifiers.ctrl || (i.modifiers.ctrl && i.modifiers.shift)) {
+                    // Csak akkor fut le, ha a Ctrl le van nyomva
+                    if ctx.input(|i| i.modifiers.ctrl ) {
                         if let Some(pointer_pos) = ctx.pointer_latest_pos() {
                             let inner_rect = output.inner_rect;
                             if inner_rect.contains(pointer_pos) {

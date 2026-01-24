@@ -12,7 +12,7 @@ fn r(th: f32) -> f32 {
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct ColorSettings {
-    pub is_default: bool,
+    //pub is_default: bool,
     pub gamma: f32,
     pub contrast: f32,
     pub brightness: f32,
@@ -31,7 +31,6 @@ pub struct ColorSettings {
 impl ColorSettings {
     pub fn default() -> Self {
         Self {
-            is_default : true,
             gamma: 1.0,
             contrast: 0.0,
             brightness: 0.0,
@@ -49,20 +48,19 @@ impl ColorSettings {
     }
     
     pub fn is_setted(&self) -> bool {
-        let is_default = 
-            (self.gamma - 1.0).abs() < 0.001 &&
+            !((self.gamma - 1.0).abs() < 0.001 &&
             self.contrast.abs() < 0.001 &&
             self.brightness.abs() < 0.001 &&
             self.hue_shift.abs() < 0.001 &&
             self.saturation.abs() < 0.001 &&
             self.show_r && self.show_g && self.show_b &&
-            !self.invert &&
-            self.sharpen_amount.abs() < 0.001;
-        !is_default
+            !self.invert)
+    }
+    pub fn is_blured(&self) -> bool {
+        self.sharpen_amount.abs() >= 0.001
     }
 
     pub fn convert(&self, color: &mut [f32; 3] ) {
-        //if self.is_default  { return; }
         if self.invert {
             *color = [1.0 - color[0], 1.0 - color[1], 1.0 - color[2]];
         }
@@ -235,7 +233,6 @@ impl Lut4ColorSettings {
 
     pub fn update_lut(&mut self, colset: &ColorSettings) {
         let mut idx = 0;
-        colset.is_setted();
         for b in 0..self.size {
             for g in 0..self.size {
                 for r in 0..self.size {

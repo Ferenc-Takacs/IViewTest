@@ -163,35 +163,6 @@ struct FilterSettings {
 @group(1) @binding(4) var t_out: texture_storage_2d<rgba8unorm, write>;
 @group(1) @binding(5) var<uniform> colset_apply: GpuColorSettings;
 
-//@compute @workgroup_size(16, 16)
-//fn apply_effects(@builtin(global_invocation_id) id: vec3<u32>) {
-//    let dims_u32 = textureDimensions(t_src);
-//    if (id.x >= dims_u32.x || id.y >= dims_u32.y) { return; }
-//    let coords = vec2<i32>(id.xy);
-//    let dims = vec2<i32>(dims_u32);
-//    let center_color = textureLoad(t_src, coords, 0).rgb;
-//    var processed = center_color;
-//    var sum = vec3<f32>(0.0);
-//    var count = 0.0;
-//    let r = i32(f.sharpen_radius);
-//    if (r > 0 && f.sharpen_amount != 0) {
-//        for (var y: i32 = -r; y <= r; y++) {
-//            for (var x: i32 = -r; x <= r; x++) {
-//                let sample_coords = clamp(coords + vec2<i32>(x, y), vec2<i32>(0), dims - vec2<i32>(1));
-//                sum += textureLoad(t_src, sample_coords, 0).rgb;
-//                count += 1.0;
-//            }
-//        }
-//        let average_color = sum / count;
-//        let detail = center_color - average_color;
-//        processed = center_color + detail * f.sharpen_amount;
-//    }
-//    let lut_size = 33.0;
-//    let lut_coords = clamp(processed, vec3(0.0), vec3(1.0)) * ((lut_size - 1.0) / lut_size) + (0.5 / lut_size);
-//    let corrected = textureSampleLevel(t_lut, s_linear, lut_coords, 0.0).rgb;
-//    textureStore(t_out, coords, vec4<f32>(corrected, 1.0));
-//}
-
 @compute @workgroup_size(16, 16)
 fn apply_effects(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims_u32 = textureDimensions(t_src);

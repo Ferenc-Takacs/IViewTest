@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use arboard::Clipboard;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::env;
 use crate::ImageViewer;
 use crate::colors::*;
@@ -27,13 +27,13 @@ pub fn save_clipboard_image() -> Option<PathBuf> {
 }
 
 
-pub fn get_exif(path: &Path) -> Option<exif::Exif> {
+/*pub fn get_exif(path: &Path) -> Option<exif::Exif> {
     if let Ok(file) = std::fs::File::open(path) {
         let mut reader = std::io::BufReader::new(file);
         return Some(exif::Reader::new().read_from_container(&mut reader).ok()?);
     }
     None
-}
+}*/
 
 /*pub fn get_jpeg_raw_exif(path: &Path) -> Option<Vec<u8>> {
     let file = std::fs::File::open(path).ok()?;
@@ -46,7 +46,7 @@ pub fn get_exif(path: &Path) -> Option<exif::Exif> {
     None
 }*/
 
-pub fn exif_to_decimal(field: &exif::Field) -> Option<f64> {
+/*pub fn exif_to_decimal(field: &exif::Field) -> Option<f64> {
     if let exif::Value::Rational(ref fractions) = field.value {
         if fractions.len() >= 3 {
             // fok + (perc / 60) + (másodperc / 3600)
@@ -57,7 +57,7 @@ pub fn exif_to_decimal(field: &exif::Field) -> Option<f64> {
         }
     }
     None
-}
+}*/
 
 #[derive(PartialEq, Serialize, Deserialize, Clone)]
 pub enum BackgroundStyle {
@@ -207,11 +207,13 @@ impl ImageViewer {
                 image::imageops::FilterType::Triangle,
             );
         }
-
+        let old_modified = self.modified;
+        self.modified = !self.show_original_only &&
+                (self.color_settings.is_setted() || self.color_settings.is_blured());
         match self.color_settings.rotate {
-            Rotate::Rotate90 => *img = img.rotate90(),
-            Rotate::Rotate180 => *img = img.rotate180(),
-            Rotate::Rotate270 => *img = img.rotate270(),
+            Rotate::Rotate90  => { *img = img.rotate90() ; self.modified = true; }, 
+            Rotate::Rotate180 => { *img = img.rotate180(); self.modified = true; },
+            Rotate::Rotate270 => { *img = img.rotate270(); self.modified = true; },
             _ => {}
         }
         if new_rotate {
@@ -224,19 +226,25 @@ impl ImageViewer {
         
         if let Some(interface) = &self.gpu_interface {
             interface.change_colorcorrection(
-                if self.show_original_only { &default_settings} else { &self.color_settings},
+                if self.show_original_only { &default_settings } else { &self.color_settings },
                 self.image_size.x,
                 self.image_size.y);
         }
 
         self.resize = self.image_size.x / w_orig as f32;
-        if self.color_settings.is_setted() {
+        
+        if self.color_settings.is_setted() || self.color_settings.is_blured() {
             if self.gpu_interface.is_some() {
                 let (width, height) = rgba_image.dimensions();
                 self.gpu_interface.as_ref().unwrap().generate_image(rgba_image.as_mut(), width, height);
-            } else if let Some(lut) = &self.lut {
+                            } else if let Some(lut) = &self.lut {
                 lut.apply_lut(&mut rgba_image); 
             }
+        }
+        if self.gpu_interface.is_some() && old_modified != self.modified {
+            let star = if self.modified { "*" } else { " " };
+            let title = format!( "IView - {}. {}{}  {}", self.actual_index, self.image_name, star, self.magnify );
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         }
 
         self.rgba_image = Some(rgba_image.clone());

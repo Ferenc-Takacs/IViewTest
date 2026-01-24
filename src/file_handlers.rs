@@ -259,7 +259,7 @@ impl ImageViewer {
             _ => {}
         }
         let mut rgba_image = processed_img.to_rgba8();
-        if self.color_settings.is_setted() {
+        if self.color_settings.is_setted() || self.color_settings.is_blured(){
             if let Some(interface) = &self.gpu_interface {
                 let (w, h) = rgba_image.dimensions();
                 interface.change_colorcorrection( &self.color_settings, w as f32, h as f32);
@@ -784,7 +784,7 @@ impl ImageViewer {
                                         _ => {}
                                     }
                                 }
-                                println!("{:?}",result);
+                                //println!("{:?}",result);
                                 self.exif = Some(result);
                             }
                         }

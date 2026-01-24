@@ -49,10 +49,10 @@ impl ImageViewer {
                                     .map(|p| p.to_string_lossy().into_owned())
                                     .unwrap_or_else(|| "Root".to_string());
                                 let hover_msg = format!(
-                                    "{}\n\n\
-                                    Left Click: -> Open\n\
-                                    Shift Left: -> Open as ...\n\
-                                    Right: -> Save as ...\n\
+                                    "{}\n                   Clicks:\n\
+                                    Left:              -> Open\n\
+                                    Shift Left:    -> Open as ...\n\
+                                    Right:           -> Save as ...\n\
                                     Shift+Right: -> Save View as ...",
                                     folder_path
                                 );
