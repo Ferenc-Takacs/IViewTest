@@ -1,6 +1,6 @@
 use crate::colors::*;
 use crate::file_handlers::*;
-use crate::image_processing::*;
+//use crate::image_processing::*;
 use crate::ImageViewer;
 
 
@@ -318,54 +318,43 @@ impl ImageViewer {
                             }
 
                             if let Some(exif) = &self.exif {
-                                if let Some(f) =
-                                    exif.get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY)
+                                if let Some(f) = exif.get_field("DateTimeOriginal".into())
                                 {
                                     ui.label("Created:");
-                                    ui.label(f.display_value().to_string());
+                                    ui.label(f/*.display_value().to_string()*/);
                                     ui.end_row();
                                 }
-                                if let Some(f) = exif.get_field(exif::Tag::Model, exif::In::PRIMARY)
+                                if let Some(f) = exif.get_field("Model".into())
                                 {
                                     ui.label("Machine:");
-                                    ui.label(f.display_value().to_string());
+                                    ui.label(f/*.display_value().to_string()*/);
                                     ui.end_row();
                                 }
 
-                                let lat = exif
-                                    .get_field(exif::Tag::GPSLatitude, exif::In::PRIMARY)
-                                    .and_then(exif_to_decimal);
-                                let lon = exif
-                                    .get_field(exif::Tag::GPSLongitude, exif::In::PRIMARY)
-                                    .and_then(exif_to_decimal);
+                                let la = exif .get_num_field("GPSLatitude".into());
+                                    //.and_then(exif_to_decimal);
+                                let lo = exif.get_num_field("GPSLongitude".into());
+                                    //.and_then(exif_to_decimal);
+                                let lar = exif.get_field("GPSLatitudeRef".into());
+                                let lor = exif.get_field("GPSLongitudeRef".into());
 
-                                let lat_ref =
-                                    exif.get_field(exif::Tag::GPSLatitudeRef, exif::In::PRIMARY);
-                                let lon_ref =
-                                    exif.get_field(exif::Tag::GPSLongitudeRef, exif::In::PRIMARY);
-
-                                if let (Some(mut lat_val), Some(mut lon_val)) = (lat, lon) {
+                                if let (Some(mut la_), Some(mut lo_), Some(lar_), Some(lor_), ) = (la, lo, lar, lor) {
                                     // S (Dél) és W (Nyugat) esetén negatív előjel
-                                    if let Some(r) = lat_ref {
-                                        if r.display_value().to_string().contains('S') {
-                                            lat_val = -lat_val;
-                                        }
+                                    if lar_.contains('S') {
+                                        la_ = -la_;
                                     }
-                                    if let Some(r) = lon_ref {
-                                        if r.display_value().to_string().contains('W') {
-                                            lon_val = -lon_val;
-                                        }
+                                    if lor_.contains('W') {
+                                        lo_ = -lo_;
                                     }
-
                                     ui.label("GeoLocation:");
-                                    let koord_szoveg = format!("{:.6}, {:.6}", lat_val, lon_val);
+                                    let koord_szoveg = format!("{:.6}, {:.6}", la_, lo_);
                                     ui.label(&koord_szoveg);
                                     ui.end_row();
 
                                     ui.label("Map:");
                                     let map_url = format!(
                                         "https://www.google.com/maps/place/{:.6},{:.6}",
-                                        lat_val, lon_val
+                                        la_, lo_
                                     );
                                     if ui.link("Open in browser 🌍").clicked() {
                                         if let Err(e) = webbrowser::open(&map_url) {
@@ -387,14 +376,14 @@ impl ImageViewer {
                                     .max_height(300.0) // Korlátozzuk a magasságot, hogy ne nyúljon túl
                                     .show(ui, |ui| {
                                         ui.group(|ui| {
-                                            if let Some(exif_data) = &self.exif {
-                                                for field in exif_data.fields() {
+                                            if let Some(exif) = &self.exif {
+                                                for (name, val, _off) in exif.fields() {
                                                     ui.horizontal(|ui| {
                                                         // Tag neve (pl. "Make", "DateTime")
-                                                        ui.label(egui::RichText::new(format!("{}:", field.tag)).strong());
-                                                        
+                                                        ui.label(egui::RichText::new(format!("{:?}:", name)).strong());
+                                                        let v = val.get("val").unwrap();
                                                         // Tag értéke (szépen formázva az exif láda által)
-                                                        ui.label(field.display_value().with_unit(exif_data).to_string());
+                                                        ui.label(v.to_string());
                                                     });
                                                 }
                                             }

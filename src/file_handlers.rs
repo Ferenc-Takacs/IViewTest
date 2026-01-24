@@ -7,6 +7,7 @@ use webp::Encoder;
 use image::AnimationDecoder;
 use std::io::{Read, Seek};
 
+use crate::exif_my::*;
 use crate::colors::*;
 use crate::image_processing::*;
 use crate::ImageViewer;
@@ -94,43 +95,6 @@ pub fn load_icon() -> egui::IconData {
     }
 }
 
-fn patch_exif_date(raw_exif: &mut Vec<u8>) {
-    let new_date = chrono::Local::now().format("%Y:%m:%d %H:%M:%S").to_string();
-    /*let date_tag: [u8; 2] = [0x32, 0x01]; // Tag 0x0132 (DateTime) kis-endiánban gyakran így van
-
-    // Keressük meg a 0x0132 taget (Utolsó módosítás ideje)
-    // Megjegyzés: Egy profibb megoldásban végig kellene járni az IFD-ket, 
-    // de a bájtok közötti keresés is működik, ha a formátum stimmel.
-    
-   
-    // Keressünk rá a dátum-szerű mintákra a bájtok között
-    let mut i = 0;
-    while i < raw_exif.len() - 19 {
-        // EXIF dátum minta ellenőrzése (pl: "2024:05:12")
-            // Megtaláltuk az egyik dátumot, írjuk felül az újjal /// de melyik dátumot???
-            for (j, byte) in new_date.as_bytes().iter().enumerate() {
-                raw_exif[i + j] = *byte;
-            }
-            // Ne álljunk meg az elsőnél, mert a DateTimeDigitized-et is frissíthetjük
-            i += 19;
-            break;
-        i += 1;
-    }*/
-}
-
-pub fn patch_exif_resolution(raw_exif: &mut Vec<u8>, resolution : Resolution) {
-    // A felbontást u32 számlálóként tároljuk (nevező = 1)
-    //let x_val = resolution.xres.round() as u32;
-    //let y_val = resolution.yres.round() as u32;
-
-    // Megkeressük a tageket a bájtok között. 
-    // Figyelem: Az EXIF lehet Little Endian (II) vagy Big Endian (MM)!
-    //let is_le = raw_exif.starts_with(b"II"); 
-
-    // Ez a rész bonyolultabb, mert az EXIF tagek után az adatok eltolva (offset) vannak.
-    // De ha a rexiv2 nem opció, a legbiztosabb, ha a betöltéskor 
-    // elmented a tagek pozícióját (offsetjét).
-}
 impl ImageViewer {
 
     pub fn load_animation(&mut self, path: &PathBuf) {
@@ -504,14 +468,16 @@ impl ImageViewer {
                             }
 
                             // JPEG mentés a nyers EXIF megtartásával
-                            if let Some(mut raw_exif) = self.raw_exif.clone() {
-                                patch_exif_date(&mut raw_exif);
-                                if let Some(res) = resolution.clone() {
-                                    patch_exif_resolution(&mut raw_exif, res);
+                            if let Some(mut exif) = self.exif.clone() {
+                                let rot = exif.get_num_field("Orientation").unwrap_or(1.0);
+                                if !self.save_original || rot != 1.0 {
+                                    if let Some(res) = resolution.clone() {
+                                        exif.patch_exifdata( res.xres, res.yres, self.image_size.x as u32, self.image_size.y as u32);
+                                    }
                                 }
                                 let exif_segment = img_parts::jpeg::JpegSegment::new_with_contents(
                                     0xE1, 
-                                    img_parts::Bytes::from(raw_exif.clone())
+                                    img_parts::Bytes::from(exif.raw_exif.clone())
                                 );
                                 jpeg.segments_mut().insert(1, exif_segment);
                             }
@@ -755,7 +721,7 @@ impl ImageViewer {
                     }
                 }
             } else if self.image_format == SaveFormat::Jpeg {
-                if let Ok(mut file) = std::fs::File::open(&filepath) {
+                /*if let Ok(mut file) = std::fs::File::open(&filepath) {
                     let mut header = [0u8; 18];
                     if file.read_exact(&mut header).is_ok() {
                         // Ellenőrizzük a JFIF mágiát: [FF D8 FF E0 ... 'J' 'F' 'I' 'F']
@@ -772,7 +738,7 @@ impl ImageViewer {
                             }
                         }
                     }
-                }
+                }*/
             }
 
             if let Ok(metadata) = fs::metadata(&filepath) { // for file size & date
@@ -781,56 +747,51 @@ impl ImageViewer {
                 self.file_meta = None;
             }
 
+            self.exif = None;
             if let Ok(mut f) = std::fs::File::open(&filepath) {
                 let mut buffer = Vec::new();
                 if f.read_to_end(&mut buffer).is_ok() {
                     if let Ok(jpeg) = img_parts::jpeg::Jpeg::from_bytes(buffer.into()) {
-                        self.raw_exif = jpeg.segments().iter()
+                        let raw_exif = jpeg.segments().iter()
                             .find(|s: &&img_parts::jpeg::JpegSegment| s.marker() == 0xE1)
                             .map(|s: &img_parts::jpeg::JpegSegment| s.contents().to_vec());
-                    }
-                }
-            } else {
-                self.raw_exif = None;
-            }
-
-            self.exif = get_exif(&filepath);
-            if let Some(exif) = &self.exif {
-                if let Some(field) = exif.get_field(exif::Tag::XResolution, exif::In::PRIMARY) {
-                    if let exif::Value::Rational(ref vec) = field.value {
-                        if let Some(rational) = vec.first() {
-                            let xres = rational.num as f32 / rational.denom as f32;
-                            if let Some(field) =
-                                exif.get_field(exif::Tag::YResolution, exif::In::PRIMARY)
-                            {
-                                if let exif::Value::Rational(ref vec) = field.value {
-                                    if let Some(rational) = vec.first() {
-                                        let yres = rational.num as f32 / rational.denom as f32;
-                                        if let Some(unit) = exif
-                                            .get_field(exif::Tag::ResolutionUnit, exif::In::PRIMARY)
-                                        {
-                                            let unit_value = unit.value.get_uint(0).unwrap_or(2);
-                                            let dpi = unit_value == 2;
-                                            self.resolution = Some(Resolution { xres, yres, dpi });
-                                            //println!("{:?} {:?} {:?} ",xres,yres,unit);
-                                        }
+                            
+                        if let Some(data) = raw_exif {
+                            let mut exifblock = ExifBlock::default();
+                            let len = data.len();
+                            if let Ok(result) = exifblock.open( &data, len) {
+                                let mut res = Resolution { xres:0.0, yres:0.0, dpi: true};
+                                if let Some(xres) = result.get_num_field("XResolution") {
+                                    res.xres = xres;
+                                    //println!("xres {}",xres);
+                                }
+                                if let Some(mut yres) = result.get_num_field("YResolution") {
+                                    if yres == 0.0 { yres = res.xres; }
+                                    res.yres = yres;
+                                    //println!("yres {}",yres);
+                                }
+                                if let Some(unit) = result.get_num_field("ResolutionUnit") {
+                                    res.dpi = unit as u32 == 2;
+                                    //println!("resu {}",res.dpi);
+                                    self.resolution = Some(res);
+                                }
+                                if let Some(orientation) = result.get_num_field("Orientation") {
+                                    //println!("orient {}",orientation);
+                                    match orientation {
+                                        6.0 => img = img.rotate90(),
+                                        3.0 => img = img.rotate180(),
+                                        8.0 => img = img.rotate270(),
+                                        _ => {}
                                     }
                                 }
+                                println!("{:?}",result);
+                                self.exif = Some(result);
                             }
                         }
                     }
                 }
-
-                if let Some(field) = exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY) {
-                    let orientation = field.value.get_uint(0);
-                    match orientation {
-                        Some(6) => img = img.rotate90(),
-                        Some(3) => img = img.rotate180(),
-                        Some(8) => img = img.rotate270(),
-                        _ => {} // Nincs forgatás vagy normál (1)
-                    }
-                }
             }
+
             self.original_image = Some(img);
 
             // Először alaphelyzetbe állítjuk az animációs adatokat

@@ -23,11 +23,11 @@ mod ui_menu;
 mod ui_draw;
 mod ui_dialogs;
 mod image_processing;
-
+mod exif_my;
 use colors::*;
 use crate::image_processing::*;
 use crate::file_handlers::*;
-
+use crate::exif_my::*;
 //use arboard::Clipboard;
 use eframe::egui;
 //use image::AnimationDecoder;
@@ -82,8 +82,9 @@ fn main() -> eframe::Result<()> {
 struct ImageViewer {
     pub image_full_path: Option<PathBuf>, // a kép neve a teljes utvonallal
     pub file_meta: Option<fs::Metadata>,
-    pub exif: Option<exif::Exif>,
-    pub raw_exif: Option<Vec<u8>>,      // A nyers blokk (mentéshez)
+    //pub exif: Option<exif::Exif>,
+    pub exif: Option<ExifBlock>,
+    //pub raw_exif: Option<Vec<u8>>,      // A nyers blokk (mentéshez)
     pub image_name: String, // kép neve a könyvtár nélkül
     pub image_format: SaveFormat,
     pub image_folder: Option<PathBuf>,     // a képek könyvtára
@@ -137,7 +138,7 @@ impl Default for ImageViewer {
             image_full_path: None,
             file_meta: None,
             exif: None,
-            raw_exif: None,
+            //raw_exif: None,
             image_name: "".to_string(),
             image_format: SaveFormat::Bmp,
             image_folder: None,
