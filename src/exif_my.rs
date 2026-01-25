@@ -1,6 +1,8 @@
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, Map, json};
+use std::io::Cursor;
+use image::codecs::jpeg::JpegEncoder;
 
 #[macro_export]
 macro_rules! apply_exif_tags {
@@ -530,11 +532,6 @@ pub struct ExifBlock {
     pub motorola_order: bool,
     pub nesting_level: i32,
     pub make : String,
-    /*pub date_offset: usize,
-    pub xres_offset: usize,
-    pub yres_offset: usize,
-    pub orient_offset: usize,
-    pub resunit_offset: usize,*/
     pub thumbnailsize: usize,
     pub thumbnailoffset: usize,
 }
@@ -555,11 +552,6 @@ impl Default for ExifBlock {
             motorola_order: false, //true: MM Big-endian, false: II Little-endian
             nesting_level: 0,
             make : "".into(),
-            /*date_offset: 0,
-            xres_offset: 0,
-            yres_offset: 0,
-            orient_offset: 0,
-            resunit_offset: 0,*/
             thumbnailsize: 0,
             thumbnailoffset: 0,
         };
@@ -742,6 +734,15 @@ impl ExifBlock {
         }
     }
 
+    pub fn patch_thumbnail(&mut self, new_thumb: &[u8]) {
+        let offset = self.thumbnailoffset; // Ezt a open() során mentetted el
+        let length = self.thumbnailsize;
+
+        if length > 0 && self.raw_exif.len() >= offset + length && new_thumb.len() == length {
+            self.raw_exif[offset..offset + length].copy_from_slice(new_thumb);
+        }
+    }
+
     pub fn patch_exifdata(&mut self, xres: f32, yres: f32, w: u32, h: u32) {
         if let Some(entry) = self.find_tag("XResolution",0,true) {
             let (nxf,nx) = if ((xres+0.5) as u32) as f32 == xres { (1.0,1u32) } else { (100000.0,100000u32) };
@@ -841,9 +842,10 @@ impl ExifBlock {
                 json.insert("Thumbnail".to_string(), value);
             }
         }
+        let json_length = json!(length);
+        json.insert("Exiflength".to_string(), json_length.clone());
+        self.entry_data_vector.push( ExifTagEntry{ name:"Exiflength".to_string(), value:json_length, offset:0} );
         
-        //let mut parent = Map::new();
-        //parent.insert("ExifHeader".to_string(), json!(json));
         self.json_data = Some(json);
         Ok(self.clone())
     }
@@ -942,35 +944,24 @@ impl ExifBlock {
                 ExifTagId::ThumbnailLength => {
                         self.thumbnailsize = self.convert_format_usize(valueptr, &format);
                     },
-                /*ExifTagId::DateTime => {
-                        self.date_offset = valueptr;
-                    },
-                ExifTagId::ResolutionUnit => {
-                        self.resunit_offset = valueptr;
-                    },
-                ExifTagId::XResolution => {
-                        self.xres_offset = valueptr;
-                    },
-                ExifTagId::YResolution => {
-                        self.yres_offset = valueptr;
-                    },
-                ExifTagId::Orientation => {
-                        if self.orient_offset != 0 {
-                            println!("dupla orient");
-                        }
-                        self.orient_offset = valueptr;
-                    },*/
                  _ => {},
                 }
 
             let (value, insert_to_flat) = self.get_entry_value(format,valueptr,components,bytecount,
                     tag.enu == ExifTagId::Make,   tag.enu == ExifTagId::MakerNote && self.make == "Canon");
 
+            let mut copy_json_tag = json_tag.clone();
             json_tag.insert("val".into(), value);
             let jsontag_value = serde_json::json!(json_tag);
 
             if insert_to_flat {
                 self.entry_data_vector.push( ExifTagEntry{ name:tag.name.clone(), value:jsontag_value.clone(), offset:valueptr} );
+            }
+            else {
+                let data = "long data";
+                copy_json_tag.insert("val".into(), json!(data));
+                let jsontag_value = serde_json::json!(copy_json_tag);
+                self.entry_data_vector.push( ExifTagEntry{ name:tag.name.clone(), value:jsontag_value, offset:valueptr} );
             }
             result.insert(tag.name, jsontag_value);
 
@@ -984,14 +975,6 @@ impl ExifBlock {
              if offset != 0 {
                 let subdirstart = offsetbase + offset;
                 if subdirstart > offsetbase+exiflength {
-                   /*if (subdirstart < offsetbase+exiflength+20){
-                      // jhead 1.3 or earlier would crop the whole directory!
-                      // as jhead produces this form of format incorrectness,
-                      // i'll just let it pass silently
-                      inf->exiftext("thumbnail removed with jhead 1.3 or earlier\n");
-                   }else{
-                      warnms(cinfo,jwrn_exif_8);
-                   }*/
                 } else {
                    if subdirstart <= offsetbase+exiflength {
                       //inf->exiftext("%*ccontinued ",level*4,' ');
@@ -1008,9 +991,6 @@ impl ExifBlock {
         
         Ok(result)
     }
-
-
-
 
 
     //fn PrintFormatNumber(&mut self,valueptr: usize, format: FMT, bytecount: i32) {}
@@ -1063,11 +1043,18 @@ impl ExifBlock {
 
             let (value, insert_to_flat) = self.get_entry_value(format,valueptr,components,bytecount, false, false);
 
+            let mut copy_json_tag = json_tag.clone();
             json_tag.insert("val".into(), value);
             let jsontag_value = serde_json::json!(json_tag);
 
             if insert_to_flat {
                 self.entry_data_vector.push( ExifTagEntry{ name:tag.name.clone(), value:jsontag_value.clone(), offset:valueptr} );
+            }
+            else {
+                let data = "long data";
+                copy_json_tag.insert("val".into(), json!(data));
+                let jsontag_value = serde_json::json!(copy_json_tag);
+                self.entry_data_vector.push( ExifTagEntry{ name:tag.name.clone(), value:jsontag_value, offset:valueptr} );
             }
             result.insert(tag.name, jsontag_value);
 
@@ -1075,6 +1062,7 @@ impl ExifBlock {
         
         Ok(result)
     }
+
 
     fn get_entry_value(&mut self, format: FMT, mut valueptr: usize, components: usize,
             bytecount: usize, is_make: bool, _is_note: bool) -> ( Value, bool) {
@@ -1183,7 +1171,45 @@ impl ExifBlock {
         }
     }
 
+    pub fn generate_fitted_thumbnail(&self, img: &image::RgbaImage) -> Vec<u8> {
+        let  max_size = self.thumbnailsize;
+        let thumb = image::DynamicImage::ImageRgba8(img.clone())
+            .thumbnail(160, 120)
+            .to_rgb8();
+
+        let mut quality = 90;
+        let mut result = Vec::new();
+
+        // 2. Iteratív tömörítés
+        loop {
+            result.clear();
+            let mut cursor = Cursor::new(&mut result);
+            let mut encoder = JpegEncoder::new_with_quality(&mut cursor, quality);
+            
+            // Mentés próbája
+            let _ = encoder.encode_image(&thumb);
+
+            // Ha belefér vagy a minőség már nem csökkenthető tovább
+            if result.len() <= max_size || quality <= 10 {
+                break;
+            }
+            quality -= 10; // Lépésenként rontjuk a minőséget
+        }
+        if result.len() > max_size {
+            return Vec::new();
+        }
+
+        // 3. Kitöltés (Padding)
+        // Ha kisebb lett, nullákkal pótoljuk, hogy a hossza pontosan max_size legyen
+        if result.len() < max_size {
+            result.resize(max_size, 0x00);
+        }
+
+        result
+    }
+
 }
+
 
 
 /*

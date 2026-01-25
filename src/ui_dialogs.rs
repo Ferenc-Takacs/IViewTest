@@ -223,6 +223,14 @@ impl ImageViewer {
                         }
                         _ => {}
                     }
+                    if save_data.can_include_exif {
+                        if let Some(exif) = self.exif.clone() {
+                            ui.separator();
+                            let txt = format!("📝 Include EXIF metadata (+ {} bytes) ",exif.raw_exif_length);
+                            ui.checkbox(&mut save_data.include_exif, txt);
+                        }
+                    }
+                    ui.add_space(10.0);
 
                     ui.horizontal(|ui| {
                         if ui.button("💾 Save").clicked() {
@@ -380,10 +388,11 @@ impl ImageViewer {
                                                 for (name, val, _off) in exif.fields() {
                                                     ui.horizontal(|ui| {
                                                         // Tag neve (pl. "Make", "DateTime")
-                                                        ui.label(egui::RichText::new(format!("{:?}:", name)).strong());
-                                                        let v = val.get("val").unwrap();
-                                                        // Tag értéke (szépen formázva az exif láda által)
-                                                        ui.label(v.to_string());
+                                                        ui.label(egui::RichText::new(format!("{}:", name.to_string())).strong());
+                                                        if let Some(v) = val.get("val") {
+                                                            ui.label(v.to_string());
+                                                        }
+                                                        else { ui.label(val.to_string()); }
                                                     });
                                                 }
                                             }

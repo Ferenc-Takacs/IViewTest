@@ -6,6 +6,7 @@ use std::time::SystemTime;
 use webp::Encoder;
 use image::AnimationDecoder;
 use std::io::{Read, Seek};
+use img_parts::ImageEXIF;
 
 use crate::exif_my::*;
 use crate::colors::*;
@@ -35,6 +36,8 @@ pub struct SaveSettings {
     pub saveformat: SaveFormat,
     pub quality: u8,    // JPEG és WebP (1-100)
     pub lossless: bool, // WebP
+    pub can_include_exif: bool,
+    pub include_exif: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -93,6 +96,25 @@ pub fn load_icon() -> egui::IconData {
         width,
         height,
     }
+}
+
+fn write_tiff_tags<W: std::io::Write + std::io::Seek, C: tiff::encoder::colortype::ColorType, K: tiff::encoder::TiffKind>
+( image_encoder: &mut tiff::encoder::ImageEncoder<'_, W, C, K>, resolution: &Option<Resolution> ) -> Result<(), String> {
+    let encoder = image_encoder.encoder();
+    let (x, y, unit) = if let Some(res) = resolution {
+        (res.xres as u32, res.yres as u32, if res.dpi { 2u16 } else { 3u16 })
+    } else {
+        (72, 72, 2u16)
+    };
+    let current_date = chrono::Local::now().format("%Y:%m:%d %H:%M:%S").to_string();
+    // Tömörítés (LZW = 5) (DEFLATE = 32946)
+    encoder.write_tag(tiff::tags::Tag::Compression, 32946u16).map_err(|e| e.to_string())?;
+    encoder.write_tag(tiff::tags::Tag::XResolution, tiff::encoder::Rational { n: x, d: 1 }).map_err(|e| e.to_string())?;
+    encoder.write_tag(tiff::tags::Tag::YResolution, tiff::encoder::Rational { n: y, d: 1 }).map_err(|e| e.to_string())?;
+    encoder.write_tag(tiff::tags::Tag::ResolutionUnit, unit).map_err(|e| e.to_string())?;
+    encoder.write_tag(tiff::tags::Tag::Software, "IView 2026").map_err(|e| e.to_string())?;
+    encoder.write_tag(tiff::tags::Tag::DateTime, current_date.as_str()).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 impl ImageViewer {
@@ -401,11 +423,15 @@ impl ImageViewer {
                     "bmp" => SaveFormat::Bmp,
                     &_ => SaveFormat::Png,
                 };
+                let inex = self.exif.is_some();
+                let can = ( saveformat == SaveFormat::Jpeg || saveformat == SaveFormat::Webp ) && inex;
                 self.save_dialog = Some(SaveSettings {
                     full_path: ut,
                     saveformat,
                     quality: 85, // Alapértelmezett JPEG minőség
                     lossless: false,
+                    can_include_exif: can,
+                    include_exif: inex,
                 });
                 if saveformat != SaveFormat::Jpeg && saveformat != SaveFormat::Webp {
                     self.completing_save();
@@ -428,20 +454,15 @@ impl ImageViewer {
                     self.image_modifies(&mut img);
                 }
                 match save_data.saveformat {
-                    
                     SaveFormat::Jpeg => {
-                        // 1. Mentés memóriába
                         let mut buffer = Vec::new();
                         let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, save_data.quality);
                         img.write_with_encoder(encoder).expect("JPEG kódolási hiba");
-
-                        // 2. DPI beírása
                         if let Ok(mut jpeg) = img_parts::jpeg::Jpeg::from_bytes(buffer.into()) {
                             if let Some(res) = resolution.clone() {
                                 let dpi_unit = if res.dpi { 1u8 } else { 2u8 }; 
                                 let x_res = res.xres as u16;
                                 let y_res = res.yres as u16;
-
                                 // JFIF APP0 adatok
                                 let jfif_data = vec![
                                     b'J', b'F', b'I', b'F', 0,
@@ -451,13 +472,10 @@ impl ImageViewer {
                                     (y_res >> 8) as u8, (y_res & 0xFF) as u8,
                                     0, 0,
                                 ];
-
-                                // A HELYES MEGOLDÁS (0.4.0 verzióhoz):
                                 let new_seg = img_parts::jpeg::JpegSegment::new_with_contents(
                                     0xE0, 
                                     img_parts::Bytes::from(jfif_data)
                                 );
-
                                 // APP0 (0xE0) keresése és frissítése
                                 let app0_pos = jpeg.segments().iter().position(|s| s.marker() == 0xE0);
                                 if let Some(pos) = app0_pos {
@@ -466,12 +484,12 @@ impl ImageViewer {
                                     jpeg.segments_mut().insert(0, new_seg);
                                 }
                             }
-
-                            // JPEG mentés a nyers EXIF megtartásával
-                            if let Some(mut exif) = self.exif.clone() {
+                            if let (true, Some(mut exif)) = (save_data.include_exif, self.exif.clone()) {
                                 let rot = exif.get_num_field("Orientation").unwrap_or(1.0);
                                 if !self.save_original || rot != 1.0 {
                                     if let Some(res) = resolution.clone() {
+                                        let thumbnail = exif.generate_fitted_thumbnail(&img.to_rgba8());
+                                        exif.patch_thumbnail(&thumbnail);
                                         exif.patch_exifdata( res.xres, res.yres, self.image_size.x as u32, self.image_size.y as u32);
                                     }
                                 }
@@ -481,7 +499,6 @@ impl ImageViewer {
                                 );
                                 jpeg.segments_mut().insert(1, exif_segment);
                             }
-
                             let file = std::fs::File::create(&save_data.full_path).unwrap();
                             jpeg.encoder().write_to(file).expect("Fájlírási hiba");
                         }
@@ -494,11 +511,77 @@ impl ImageViewer {
                         } else {
                             encoder.encode(save_data.quality as f32)
                         };
-                        if let Err(e) = std::fs::write(&save_data.full_path, &*memory) {
-                            println!("Hiba a WebP mentésekor: {}", e);
+                        let mut webp = img_parts::webp::WebP::from_bytes(img_parts::Bytes::copy_from_slice(&*memory))
+                            .expect("Hiba a WebP struktúra feldolgozásakor");
+                        if let (true, Some(mut exif)) = (save_data.include_exif, self.exif.clone()) {
+                            let rot = exif.get_num_field("Orientation").unwrap_or(1.0);
+                            if !self.save_original || rot != 1.0 {
+                                if let Some(res) = resolution.clone() {
+                                    let thumbnail = exif.generate_fitted_thumbnail(&img.to_rgba8());
+                                    exif.patch_thumbnail(&thumbnail);
+                                    exif.patch_exifdata( res.xres, res.yres, self.image_size.x as u32, self.image_size.y as u32);
+                                }
+                            }
+                            webp.set_exif(Some(img_parts::Bytes::from(exif.raw_exif)));
+                        }
+                        let file = std::fs::File::create(&save_data.full_path).expect("Fájl létrehozási hiba");
+                        if let Err(e) = webp.encoder().write_to(file) {
+                            println!("Hiba a WebP fájl írásakor: {}", e);
                         }
                     }
                     SaveFormat::Tif => {
+                        let file = std::fs::File::create(&save_data.full_path).unwrap();
+                        let mut tiff = tiff::encoder::TiffEncoder::new(file).unwrap();
+                        let (width, height) = (img.width(),img.height());
+                        let rgb_data = img.to_rgb8(); 
+                        let (x, y, unit) = if let Some(res) = resolution {
+                            ((res.xres * 1000.0) as u32, (res.yres * 1000.0) as u32, if res.dpi { 2u16 } else { 3u16 })
+                        } else {
+                            (72000, 72000, 2u16)
+                        };
+                        let mut col = tiff.new_image::<tiff::encoder::colortype::RGB8>(width, height).unwrap();
+                        // Tömörítés (LZW = 5) (DEFLATE = 32946)
+                        //col.set_compression(5u16);
+                        let encoder = col.encoder();
+                        encoder.write_tag(tiff::tags::Tag::XResolution, tiff::encoder::Rational { n: x, d: 1000 }).unwrap();
+                        encoder.write_tag(tiff::tags::Tag::YResolution, tiff::encoder::Rational { n: y, d: 1000 }).unwrap();
+                        encoder.write_tag(tiff::tags::Tag::ResolutionUnit, unit).unwrap();
+                        encoder.write_tag(tiff::tags::Tag::Software, "IView 2026").unwrap();
+                        encoder.write_tag(tiff::tags::Tag::DateTime, chrono::Local::now().format("%Y:%m:%d %H:%M:%S").to_string().as_str()).unwrap();
+                        // Ezek alapértelmezettek, de a biztonság kedvéért maradhatnak:
+                        encoder.write_tag(tiff::tags::Tag::RowsPerStrip, height).unwrap();
+                        encoder.write_tag(tiff::tags::Tag::PlanarConfiguration, 1u16).unwrap();
+                        encoder.write_tag(tiff::tags::Tag::PhotometricInterpretation, 2u16).unwrap();
+                        col.write_data(rgb_data.as_raw()).expect("TIFF írási hiba");
+                    }
+                    /*SaveFormat::Tif => {
+                        let file = std::fs::File::create(&save_data.full_path).unwrap();
+                        let mut tiff = tiff::encoder::TiffEncoder::new(file).unwrap();
+                        let width = img.width();
+                        let height = img.height();
+                        let rgb_data = img.to_rgb8(); 
+                        let mut col = tiff.new_image::<tiff::encoder::colortype::RGB8>(width, height).unwrap();
+                        let encoder = col.encoder();
+                        let (x, y, unit) = if let Some(res) = resolution {
+                            ((res.xres*10000.0) as u32, (res.yres*10000.0) as u32, if res.dpi { 2u16 } else { 3u16 })
+                        } else {
+                            (720000, 720000, 2u16)
+                        };
+                        let current_date = chrono::Local::now().format("%Y:%m:%d %H:%M:%S").to_string();
+                        // Tömörítés (LZW = 5) (DEFLATE = 32946)
+                        //encoder.write_tag(tiff::tags::Tag::Compression, 5u16).unwrap();
+                        encoder.write_tag(tiff::tags::Tag::XResolution, tiff::encoder::Rational { n: x, d: 10000 }).unwrap();
+                        encoder.write_tag(tiff::tags::Tag::YResolution, tiff::encoder::Rational { n: y, d: 10000 }).unwrap();
+                        encoder.write_tag(tiff::tags::Tag::ResolutionUnit, unit).unwrap();
+                        encoder.write_tag(tiff::tags::Tag::Software, "IView 2026").unwrap();
+                        encoder.write_tag(tiff::tags::Tag::DateTime, current_date.as_str()).unwrap();
+                        encoder.write_tag(tiff::tags::Tag::RowsPerStrip, height).unwrap(); // Egy csíkban az egész kép
+                        encoder.write_tag(tiff::tags::Tag::PlanarConfiguration, 1u16).unwrap(); // Chunky format
+                        encoder.write_tag(tiff::tags::Tag::PhotometricInterpretation, 2u16).unwrap(); // RGB
+                        
+                        col.write_data(rgb_data.as_raw()).expect("TIFF írási hiba");
+                    }*/
+                    /*SaveFormat::Tif => {
                         let file = std::fs::File::create(&save_data.full_path).unwrap();
                         let writer = std::io::BufWriter::new(file);
                         let encoder = image::codecs::tiff::TiffEncoder::new(writer);
@@ -512,7 +595,7 @@ impl ImageViewer {
                         ) {
                             println!("Hiba a TIFF mentésekor: {}", e);
                         }
-                    }
+                    }*/
                     SaveFormat::Png => {
                         if let Some(res) = resolution {
                             let file = std::fs::File::create(&save_data.full_path).unwrap();
@@ -679,7 +762,8 @@ impl ImageViewer {
                         }
                     }
                 }
-            } else if self.image_format == SaveFormat::Bmp {
+            }
+            else if self.image_format == SaveFormat::Bmp {
                 if let Ok(mut file) = std::fs::File::open(&filepath) {
                     let mut buffer = [0u8; 8];
                     if file.seek(std::io::SeekFrom::Start(38)).is_ok()
@@ -700,7 +784,8 @@ impl ImageViewer {
                         }
                     }
                 }
-            } else if self.image_format == SaveFormat::Png {
+            }
+            else if self.image_format == SaveFormat::Png {
                 if let Ok(file) = std::fs::File::open(&filepath) {
                     let reader = std::io::BufReader::new(file);
                     let decoder = png::Decoder::new(reader);
@@ -720,8 +805,9 @@ impl ImageViewer {
                         }
                     }
                 }
-            } else if self.image_format == SaveFormat::Jpeg {
-                /*if let Ok(mut file) = std::fs::File::open(&filepath) {
+            }
+            else if self.image_format == SaveFormat::Jpeg {
+                if let Ok(mut file) = std::fs::File::open(&filepath) {
                     let mut header = [0u8; 18];
                     if file.read_exact(&mut header).is_ok() {
                         // Ellenőrizzük a JFIF mágiát: [FF D8 FF E0 ... 'J' 'F' 'I' 'F']
@@ -738,7 +824,7 @@ impl ImageViewer {
                             }
                         }
                     }
-                }*/
+                }
             }
 
             if let Ok(metadata) = fs::metadata(&filepath) { // for file size & date
@@ -751,41 +837,77 @@ impl ImageViewer {
             if let Ok(mut f) = std::fs::File::open(&filepath) {
                 let mut buffer = Vec::new();
                 if f.read_to_end(&mut buffer).is_ok() {
-                    if let Ok(jpeg) = img_parts::jpeg::Jpeg::from_bytes(buffer.into()) {
-                        let raw_exif = jpeg.segments().iter()
-                            .find(|s: &&img_parts::jpeg::JpegSegment| s.marker() == 0xE1)
-                            .map(|s: &img_parts::jpeg::JpegSegment| s.contents().to_vec());
-                            
-                        if let Some(data) = raw_exif {
-                            let mut exifblock = ExifBlock::default();
-                            let len = data.len();
-                            if let Ok(result) = exifblock.open( &data, len) {
-                                let mut res = Resolution { xres:0.0, yres:0.0, dpi: true};
-                                if let Some(xres) = result.get_num_field("XResolution") {
-                                    res.xres = xres;
-                                    //println!("xres {}",xres);
+                    if self.image_format == SaveFormat::Webp {
+                        if let Ok(webp) = img_parts::webp::WebP::from_bytes(buffer.clone().into()) {
+                            if let Some(exif_bytes) = webp.exif() {
+                                let mut data = exif_bytes.to_vec().clone();
+                                if !data.starts_with(b"Exif\0\0") {
+                                    let mut legacy_format = b"Exif\0\0".to_vec();
+                                    legacy_format.extend_from_slice(&data);
+                                    data = legacy_format;
                                 }
-                                if let Some(mut yres) = result.get_num_field("YResolution") {
-                                    if yres == 0.0 { yres = res.xres; }
-                                    res.yres = yres;
-                                    //println!("yres {}",yres);
-                                }
-                                if let Some(unit) = result.get_num_field("ResolutionUnit") {
-                                    res.dpi = unit as u32 == 2;
-                                    //println!("resu {}",res.dpi);
-                                    self.resolution = Some(res);
-                                }
-                                if let Some(orientation) = result.get_num_field("Orientation") {
-                                    //println!("orient {}",orientation);
-                                    match orientation {
-                                        6.0 => img = img.rotate90(),
-                                        3.0 => img = img.rotate180(),
-                                        8.0 => img = img.rotate270(),
-                                        _ => {}
+                                let mut exifblock = ExifBlock::default();
+                                let len = data.len();
+                                if let Ok(result) = exifblock.open( &data, len) {
+                                    let mut res = Resolution { xres:0.0, yres:0.0, dpi: true};
+                                    if let Some(xres) = result.get_num_field("XResolution") {
+                                        res.xres = xres;
                                     }
+                                    if let Some(mut yres) = result.get_num_field("YResolution") {
+                                        if yres == 0.0 { yres = res.xres; }
+                                        res.yres = yres;
+                                    }
+                                    if let Some(unit) = result.get_num_field("ResolutionUnit") {
+                                        res.dpi = unit as u32 == 2;
+                                        //println!("resu {:?}",res);
+                                        self.resolution = Some(res);
+                                    }
+                                    if let Some(orientation) = result.get_num_field("Orientation") {
+                                        match orientation {
+                                            6.0 => img = img.rotate90(),
+                                            3.0 => img = img.rotate180(),
+                                            8.0 => img = img.rotate270(),
+                                            _ => {}
+                                        }
+                                    }
+                                    self.exif = Some(result);
                                 }
-                                //println!("{:?}",result);
-                                self.exif = Some(result);
+                            }
+                        }
+                    }
+                    else if self.image_format == SaveFormat::Jpeg {
+                        if let Ok(jpeg) = img_parts::jpeg::Jpeg::from_bytes(buffer.into()) {
+                            let raw_exif = jpeg.segments().iter()
+                                .find(|s: &&img_parts::jpeg::JpegSegment| s.marker() == 0xE1)
+                                .map(|s: &img_parts::jpeg::JpegSegment| s.contents().to_vec());
+                                
+                            if let Some(data) = raw_exif {
+                                let mut exifblock = ExifBlock::default();
+                                let len = data.len();
+                                if let Ok(result) = exifblock.open( &data, len) {
+                                    let mut res = Resolution { xres:0.0, yres:0.0, dpi: true};
+                                    if let Some(xres) = result.get_num_field("XResolution") {
+                                        res.xres = xres;
+                                    }
+                                    if let Some(mut yres) = result.get_num_field("YResolution") {
+                                        if yres == 0.0 { yres = res.xres; }
+                                        res.yres = yres;
+                                    }
+                                    if let Some(unit) = result.get_num_field("ResolutionUnit") {
+                                        res.dpi = unit as u32 == 2;
+                                        self.resolution = Some(res);
+                                    }
+                                    if let Some(orientation) = result.get_num_field("Orientation") {
+                                        match orientation {
+                                            6.0 => img = img.rotate90(),
+                                            3.0 => img = img.rotate180(),
+                                            8.0 => img = img.rotate270(),
+                                            _ => {}
+                                        }
+                                    }
+                                    //println!("{:?}",result);
+                                    self.exif = Some(result);
+                                }
                             }
                         }
                     }

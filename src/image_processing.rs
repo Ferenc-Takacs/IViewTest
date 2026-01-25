@@ -85,7 +85,7 @@ impl BackgroundStyle {
 }
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Resolution {
     pub xres: f32,
     pub yres: f32,
@@ -207,7 +207,6 @@ impl ImageViewer {
                 image::imageops::FilterType::Triangle,
             );
         }
-        let old_modified = self.modified;
         self.modified = !self.show_original_only &&
                 (self.color_settings.is_setted() || self.color_settings.is_blured());
         match self.color_settings.rotate {
@@ -240,11 +239,6 @@ impl ImageViewer {
                             } else if let Some(lut) = &self.lut {
                 lut.apply_lut(&mut rgba_image); 
             }
-        }
-        if self.gpu_interface.is_some() && old_modified != self.modified {
-            let star = if self.modified { "*" } else { " " };
-            let title = format!( "IView - {}. {}{}  {}", self.actual_index, self.image_name, star, self.magnify );
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         }
 
         self.rgba_image = Some(rgba_image.clone());
