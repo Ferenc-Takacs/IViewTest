@@ -225,7 +225,9 @@ impl ImageViewer {
                     }
                     if save_data.can_include_exif {
                         if let Some(exif) = self.exif.clone() {
-                            ui.separator();
+                            if save_data.saveformat != SaveFormat::Bmp {
+                                ui.separator();
+                            }
                             let txt = format!("📝 Include EXIF metadata (+ {} bytes) ",exif.raw_exif_length);
                             ui.checkbox(&mut save_data.include_exif, txt);
                         }
