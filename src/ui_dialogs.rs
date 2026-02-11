@@ -225,7 +225,7 @@ impl ImageViewer {
                     }
                     if save_data.can_include_exif {
                         if let Some(exif) = self.exif.clone() {
-                            if save_data.saveformat != SaveFormat::Bmp {
+                            if save_data.saveformat != SaveFormat::Bmp && save_data.saveformat != SaveFormat::Png {
                                 ui.separator();
                             }
                             let txt = format!("📝 Include EXIF metadata (+ {} bytes) ",exif.raw_exif_length);
@@ -456,7 +456,7 @@ impl ImageViewer {
                 }
                 let con = ui.add(egui::Slider::new(
                     &mut self.color_settings.contrast, -1.0..=1.0)
-                    .text("Contrass"));
+                    .text("Contrast"));
                 if self.gpu_interface.is_none() {
                     if con.drag_stopped() || (con.changed() && !ui.input(|i| i.pointer.any_down())) {
                         changed = true;
@@ -510,7 +510,7 @@ impl ImageViewer {
                             changed = true;
                         }
                     }
-                     let bri = ui.add(egui::Slider::new(
+                    let bri = ui.add(egui::Slider::new(
                         &mut self.color_settings.brightness, -1.0..=1.0)
                         .text("Brightness"));
                     if self.gpu_interface.is_none() {
@@ -575,18 +575,18 @@ impl ImageViewer {
                         self.color_settings = ColorSettings::default();
                         changed = true;
                     }
-                    ui.add_space(ui.available_width() - 90.0); 
+                    ui.add_space(160.0); 
 
-                    let btn = ui.add(egui::Button::new("Show Original"));
-                    let orig = self.show_original_only;
-                    if btn.contains_pointer() && ui.input(|i| i.pointer.any_down()) {
-                        self.show_original_only = true;
-                    } else {
-                        self.show_original_only = false;
-                    }
-                    if self.show_original_only != orig {
+                    let btn = ui.add(egui::Button::new("Show Original (Shift+Alt)"));
+                    
+                    let keys_active = (btn.contains_pointer() && ui.input(|i| i.pointer.any_down())) 
+                            || ctx.input(|i| i.modifiers.shift && i.modifiers.alt);
+                       
+                    if (keys_active && !self.show_original_only) || (!keys_active && self.show_original_only) {
+                        self.show_original_only = keys_active;
                         changed = true;
                     }
+                       
                 });
             });
             if changed {

@@ -96,7 +96,6 @@ pub struct AnimatedImage {
     //pub anim_frames: Vec<egui::TextureHandle>, // GPU textúrák // old
     pub anim_frames: Vec<image::DynamicImage>,
     pub delays: Vec<std::time::Duration>, // Időzítések
-    pub total_frames: usize,
 }
 
 pub fn color_image_to_dynamic(color_image: egui::ColorImage) -> image::DynamicImage {

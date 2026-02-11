@@ -79,6 +79,21 @@ fn main() -> eframe::Result<()> {
     )
 }
 
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub enum Menu {
+    None,
+    File,
+    Options,
+    Recents,
+    RecentFile,
+    Sort,
+    Position,
+    Rotate,
+    Channels,
+    Backgrounds,
+    Zoom,
+}
+
 struct ImageViewer {
     pub image_full_path: Option<PathBuf>, // a kép neve a teljes utvonallal
     pub file_meta: Option<fs::Metadata>,
@@ -122,6 +137,7 @@ struct ImageViewer {
     pub anim_playing: bool,   // Fut-e most az animáció?
     pub anim_loop: bool,      // Ismétlődjön-e (default: true)?
     pub current_frame: usize, // Hol tartunk?
+    pub total_frames: usize,
     pub last_frame_time: std::time::Instant,
     pub anim_data: Option<AnimatedImage>,
     pub show_original_only: bool,
@@ -129,7 +145,23 @@ struct ImageViewer {
     pub gpu_tried_init: bool,
     pub use_gpu: bool,
     pub modified: bool,
+    pub last_closed_time: f64,
+    pub current_menu : Menu,
+    pub last_menu : Menu,
+    pub menu_pos: egui::Pos2,
+    pub file_menu_pos: egui::Pos2,
+    pub options_menu_pos: egui::Pos2,
+    pub recents_menu_pos: egui::Pos2,
+    pub recentfile_menu_pos: egui::Pos2,
+    pub sort_menu_pos: egui::Pos2,
+    pub position_menu_pos: egui::Pos2,
+    pub rotate_menu_pos: egui::Pos2,
+    pub channels_menu_pos: egui::Pos2,
+    pub background_menu_pos: egui::Pos2,
+    pub zoom_menu_pos: egui::Pos2,
+    pub recentfile: PathBuf,
 }
+
 
 impl Default for ImageViewer {
     fn default() -> Self {
@@ -178,6 +210,7 @@ impl Default for ImageViewer {
             anim_playing: false, // Fut-e most az animáció?
             anim_loop: true,     // Ismétlődjön-e (default: true)?
             current_frame: 0,    // Hol tartunk?
+            total_frames: 0,
             last_frame_time: std::time::Instant::now(),
             anim_data: None,
             show_original_only: false,
@@ -185,6 +218,21 @@ impl Default for ImageViewer {
             gpu_tried_init: false,
             use_gpu: true,
             modified: false,
+            last_closed_time: 0.0,
+            current_menu : Menu::None,
+            last_menu : Menu::None,
+            menu_pos: (0.0,0.0).into(),
+            file_menu_pos: (0.0,0.0).into(),
+            options_menu_pos: (0.0,0.0).into(),
+            recents_menu_pos: (0.0,0.0).into(),
+            recentfile_menu_pos: (0.0,0.0).into(),
+            sort_menu_pos: (0.0,0.0).into(),
+            position_menu_pos: (0.0,0.0).into(),
+            rotate_menu_pos: (0.0,0.0).into(),
+            channels_menu_pos: (0.0,0.0).into(),
+            background_menu_pos: (0.0,0.0).into(),
+            zoom_menu_pos: (0.0,0.0).into(),
+            recentfile: PathBuf::default(),
         }
     }
 }

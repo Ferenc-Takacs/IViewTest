@@ -140,11 +140,12 @@ Az **IView** egy sokoldalú képnézegető alkalmazás, amely számos hasznos ki
 | R | Reopen same image (hide/show inside/outside modification)|
 | S | Save image  & convert to other type) |
 | Shift + S | Save modified view & convert |
-| Alt + C | Copy |
-| Alt + Shift + C | Copy View  |
-| Alt + V | Paste  |
-| Alt + X | Change  |
-| Alt + Shift + X | Change View  |
+| A | Open recent paths window menu |
+| Alt + C | Copy to clipboard |
+| Alt + Shift + C | Copy View to clipboard |
+| Alt + V | Paste from clipboard |
+| Alt + X | Change with clipboard |
+| Alt + Shift + X | Change View with clipboard |
 | Escape | exit from popup windows or program  |
 | Ctrl + R | Toggle red channel |
 | Ctrl + G | Toggle greeen channel |
@@ -152,12 +153,13 @@ Az **IView** egy sokoldalú képnézegető alkalmazás, amely számos hasznos ki
 | Ctrl + I | Invert color channels |
 | C | Open color corrections window |
 | I | Open informations window |
-| D | Toggle backgrounds for transparent images |
+| D | Toggle backgrounds style for transparent images |
 | Ctrl + Left | Rotate -90° |
 | Ctrl + Rigth | Rotate 90° |
 | Ctrl + Up | Rotate 180° |
-| Ctrl + Down | Stand 0° |
-| Ctrl + Shift | Pick Pixel to Tooltip |
+| Ctrl + Down | Stand to 0° |
+| Ctrl | Pick Pixel to Tooltip (until press) |
+| Shift + Alt | Show original image (until press) |
 
 ---
 ### 🛠 Tech Stack / Technológiai háttér
@@ -168,7 +170,7 @@ Az **IView** egy sokoldalú képnézegető alkalmazás, amely számos hasznos ki
 *   **Cross-platform:** Tested and working on Windows 10 and Linux (Linux Mint).
 
 *   **Executables:** in the executables folder
-*   **Latest Version:** 0.3.0 
+*   **Latest Version:** 0.5.0 
 
 ### 🚀 Development / Fejlesztés
 

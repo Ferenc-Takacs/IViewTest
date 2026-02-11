@@ -6,6 +6,7 @@ use crate::ImageViewer;
 impl ImageViewer {
 
     pub fn draw_image_area(&mut self, ctx: &egui::Context, change_magnify: &mut f32, mouse_zoom: &mut bool){
+        
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.inner_margin(0.0)) // Margók eltüntetése
             .show(ctx, |ui| {
@@ -161,6 +162,14 @@ impl ImageViewer {
                         }).inner;
                         
                     self.aktualis_offset = output.state.offset;
+
+                    let keys_active = !self.color_correction_dialog && ctx.input(|i| i.modifiers.shift && i.modifiers.alt);
+                    
+                    if (keys_active && !self.show_original_only) || (!keys_active && self.show_original_only) {
+                        self.show_original_only = keys_active;
+                        self.settings_dirty = true;
+                        self.review(ctx, true, false);
+                    }
 
                     // Csak akkor fut le, ha a Ctrl le van nyomva
                     if ctx.input(|i| i.modifiers.ctrl ) {

@@ -77,9 +77,9 @@ pub fn get_settings_path() -> PathBuf {
     if let Some(proj_dirs) = ProjectDirs::from("com", "iview", "iview-rust") {
         let config_dir = proj_dirs.config_local_dir(); // Ez az AppData/Local Windows-on
         let _ = fs::create_dir_all(config_dir);
-        return config_dir.join("settings.json");
+        return config_dir.join("settings_.json");
     }
-    PathBuf::from("settings.json")
+    PathBuf::from("settings_.json")
 }
 
 pub fn load_icon() -> egui::IconData {
@@ -147,8 +147,9 @@ impl ImageViewer {
                 self.anim_data = Some(AnimatedImage {
                     anim_frames: images,
                     delays,
-                    total_frames: total,
                 });
+                self.current_frame = 0;
+                self.total_frames = total;
                 self.last_frame_time = std::time::Instant::now();
             }
         }

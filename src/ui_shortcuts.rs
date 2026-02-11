@@ -1,10 +1,11 @@
 use crate::colors::*;
 use crate::ImageViewer;
-
+ 
 impl ImageViewer {
 
     pub fn handle_shortcuts(&mut self, ctx: &egui::Context, change_magnify :&mut f32, mouse_zoom: &mut bool){
-        // Gyorsbillentyűk figyelése
+
+       // Gyorsbillentyűk figyelése
         if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::ALT | egui::Modifiers::SHIFT,
@@ -202,7 +203,7 @@ impl ImageViewer {
                 egui::Key::D,
             ))
         }) {
-            // bacground rotate
+            // background rotate
             self.bg_style = self.bg_style.clone().inc();
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
@@ -278,5 +279,4 @@ impl ImageViewer {
             });
         }
     }
-
 }

@@ -62,7 +62,7 @@ impl ImageViewer {
                         // Képkocka váltás
                         let old_frame = self.current_frame;
 
-                        if self.current_frame + 1 >= anim.total_frames {
+                        if self.current_frame + 1 >= self.total_frames {
                             if self.anim_loop {
                                 self.current_frame = 0; // Újraindul
                             } else {
