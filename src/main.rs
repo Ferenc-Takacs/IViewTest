@@ -145,21 +145,7 @@ struct ImageViewer {
     pub gpu_tried_init: bool,
     pub use_gpu: bool,
     pub modified: bool,
-    pub last_closed_time: f64,
-    pub current_menu : Menu,
-    pub last_menu : Menu,
-    pub menu_pos: egui::Pos2,
-    pub file_menu_pos: egui::Pos2,
-    pub options_menu_pos: egui::Pos2,
-    pub recents_menu_pos: egui::Pos2,
-    pub recentfile_menu_pos: egui::Pos2,
-    pub sort_menu_pos: egui::Pos2,
-    pub position_menu_pos: egui::Pos2,
-    pub rotate_menu_pos: egui::Pos2,
-    pub channels_menu_pos: egui::Pos2,
-    pub background_menu_pos: egui::Pos2,
-    pub zoom_menu_pos: egui::Pos2,
-    pub recentfile: PathBuf,
+    pub menvar: MenuVariables,
 }
 
 
@@ -218,6 +204,33 @@ impl Default for ImageViewer {
             gpu_tried_init: false,
             use_gpu: true,
             modified: false,
+            menvar: MenuVariables::default(),
+        }
+    }
+}
+
+#[derive(PartialEq, Clone, Debug)]
+pub struct MenuVariables {
+    pub last_closed_time: f64,
+    pub current_menu : Menu,
+    pub last_menu : Menu,
+    pub menu_pos: egui::Pos2,
+    pub file_menu_pos: egui::Pos2,
+    pub options_menu_pos: egui::Pos2,
+    pub recents_menu_pos: egui::Pos2,
+    pub recentfile_menu_pos: egui::Pos2,
+    pub sort_menu_pos: egui::Pos2,
+    pub position_menu_pos: egui::Pos2,
+    pub rotate_menu_pos: egui::Pos2,
+    pub channels_menu_pos: egui::Pos2,
+    pub background_menu_pos: egui::Pos2,
+    pub zoom_menu_pos: egui::Pos2,
+    pub recentfile: PathBuf,
+}
+
+impl Default for MenuVariables {
+    fn default() -> Self {
+        Self {
             last_closed_time: 0.0,
             current_menu : Menu::None,
             last_menu : Menu::None,
@@ -236,6 +249,8 @@ impl Default for ImageViewer {
         }
     }
 }
+
+
 
 impl eframe::App for ImageViewer {
     
