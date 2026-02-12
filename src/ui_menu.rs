@@ -2,142 +2,208 @@ use crate::colors::*;
 use crate::file_handlers::*;
 use crate::image_processing::*;
 use crate::ImageViewer;
-// use egui::WindowLevel;
 use crate::Menu;
- use crate::MenuVariables;
- 
+use crate::MenuVariables;
+
+pub fn separator(ui: &mut egui::Ui) {
+    let rect = ui.available_rect_before_wrap();
+    let line_rect = egui::Rect::from_min_size(
+        rect.min, 
+        egui::vec2(140.0, 4.0)
+    );
+    ui.painter().rect_filled(line_rect, 0.0, ui.visuals().widgets.noninteractive.bg_fill);
+    ui.advance_cursor_after_rect(line_rect);
+}
+
+pub fn pos(ui: &mut egui::Ui, pos1:egui::Pos2, pos2:egui::Pos2 ) -> egui::Pos2 {
+    let mut pos = pos1;
+    pos.x = ui.max_rect().right();
+    pos + pos2.to_vec2()
+}
+
 impl MenuVariables {
-    
+
+    fn menu_eq(&self, menu: Menu) -> bool {
+        if Menu::RecentFile == menu && self.current_menu == menu {
+            return self.recentidx_curr == self.recentidx_parm;
+        }
+        self.current_menu == menu
+    }
+
+    fn str_menu(&self, menu: Menu) -> String {
+        if Menu::RecentFile == menu { format!("RecentFile_{:?}_{:?}", self.recentidx_last, self.recentidx_curr) }
+        else { format!("{:?}",menu) }
+    }
+
+    fn is_in_root(&self, menu: Menu ) -> bool {
+        if self.menu_eq(menu) { return false; }
+        match self.current_menu {
+            Menu::None          => false,
+            Menu::File          => menu == Menu::None,
+            Menu::Options       => menu == Menu::None,
+            Menu::Recents       => menu == Menu::None || menu == Menu::File,
+            Menu::RecentFile    => menu == Menu::None || menu == Menu::File || menu == Menu::Recents,
+            Menu::Sort          => menu == Menu::None || menu == Menu::Options,
+            Menu::Position      => menu == Menu::None || menu == Menu::Options,
+            Menu::Rotate        => menu == Menu::None || menu == Menu::Options,
+            Menu::Channels      => menu == Menu::None || menu == Menu::Options,
+            Menu::Backgrounds   => menu == Menu::None || menu == Menu::Options,
+            Menu::Zoom          => menu == Menu::None || menu == Menu::Options,
+        }
+    }
+
+    fn depth(&self, menu: Menu) -> usize {
+        match menu {
+            Menu::None          => 0,
+            Menu::File          => 1,
+            Menu::Options       => 1,
+            Menu::Recents       => 2,
+            Menu::RecentFile    => 3,
+            Menu::Sort          => 2,
+            Menu::Position      => 2,
+            Menu::Rotate        => 2,
+            Menu::Channels      => 2,
+            Menu::Backgrounds   => 2,
+            Menu::Zoom          => 2,
+        }
+    }
+
+    fn pos(&self, menu: Menu) -> egui::Pos2 {
+        match menu {
+            Menu::None          => self.menu_pos,
+            Menu::File          => self.file_menu_pos       + self.menu_pos.to_vec2(),
+            Menu::Options       => self.options_menu_pos    + self.menu_pos.to_vec2(),
+            Menu::Recents       => self.recents_menu_pos    + self.menu_pos.to_vec2(),
+            Menu::RecentFile    => self.recentfile_menu_pos + self.menu_pos.to_vec2(),
+            Menu::Sort          => self.sort_menu_pos       + self.menu_pos.to_vec2(),
+            Menu::Position      => self.position_menu_pos   + self.menu_pos.to_vec2(),
+            Menu::Rotate        => self.rotate_menu_pos     + self.menu_pos.to_vec2(),
+            Menu::Channels      => self.channels_menu_pos   + self.menu_pos.to_vec2(),
+            Menu::Backgrounds   => self.background_menu_pos + self.menu_pos.to_vec2(),
+            Menu::Zoom          => self.zoom_menu_pos       + self.menu_pos.to_vec2(),
+        }
+    }
+
     pub fn change_menu(&mut self, ctx: &egui::Context, menu: Menu ) -> bool {
-        if self.last_menu == menu && menu != Menu::None &&
-            ctx.input(|i| i.time) - self.last_closed_time < 0.18
-        { return false; } // disable fast repeat (previous lose focus by click)
-        self.current_menu = menu;
-        self.last_menu = menu;
-        true
+        let curr = self.current_menu;
+        let last = self.last_menu;
+        let new = menu;
+        let mut fast = false;
+        if self.last_menu != self.current_menu && ctx.input(|i| i.time) - self.last_closed_time < 0.18 {
+            // restore after lost focus
+            self.current_menu = self.last_menu;
+            self.recentidx_curr = self.recentidx_last;
+            fast = true;
+        }
+        if menu != Menu::None && (self.depth(menu) != self.depth(self.current_menu) || !self.menu_eq(menu)) { // OK
+            self.last_closed_time = ctx.input(|i| i.time);
+            self.current_menu = menu;
+            self.last_menu = menu;
+            self.recentidx_curr = self.recentidx_parm;
+            self.recentidx_last = self.recentidx_parm;
+            println!("{} {} {} Set {}", self.str_menu(last), self.str_menu(curr), self.str_menu(new), fast);
+            true
+        }
+        else {
+            self.recentidx_last = 1000;
+            self.current_menu = Menu::None;
+            self.last_menu = Menu::None;
+            ctx.send_viewport_cmd_to(
+                egui::ViewportId::ROOT, 
+                egui::ViewportCommand::Focus
+            );
+            println!("{} {} {} {}", self.str_menu(last), self.str_menu(curr), self.str_menu(new), fast);
+            false
+        }
+    }
+
+    pub fn in_focus_or_root(&mut self, ui: &egui::Ui, menu: Menu ) -> bool {
+        if self.is_in_root(menu) || menu == Menu::None {
+            return true;
+        }
+        if !self.menu_eq(menu) {
+            println!("{} != {}", self.str_menu(menu), self.str_menu(self.current_menu));
+            return false;
+        }
+        if ui.input(|i| i.viewport().focused.unwrap_or(true)) {
+            return true;
+        }
+        println!("{} {} lost", self.str_menu(menu), self.str_menu(self.current_menu));
+        self.current_menu = Menu::None;
+        self.recentidx_curr = 1000;
+        self.last_closed_time = ui.input(|i| i.time);
+        false
     }
 
     pub fn menu_is_active(&mut self, ctx: &egui::Context, menu: Menu ) -> bool {
-        if menu == self.current_menu {
-            if self.in_focus(ctx,menu) { return true; }
-            self.current_menu = Menu::None;
-            self.last_closed_time = ctx.input(|i| i.time);
-            return false;
+        /*if self.last_menu != self.current_menu && ctx.input(|i| i.time) - self.last_closed_time < 0.18 {
+            // restore after lost focus
+            self.current_menu = self.last_menu;
+            self.recentidx_curr = self.recentidx_last;
+        }*/
+        if self.menu_eq(menu) {
+            return true;
         }
         return self.is_in_root(menu); 
     }
 
-    pub fn in_focus(&mut self, ctx: &egui::Context, _menu: Menu ) -> bool {
-        if ctx.input(|i| i.viewport().focused.unwrap_or(true)) { return true; }
-        /*match menu {
-            Menu::File          => ,
-            Menu::Options       => ,
-            Menu::Recents       => ,
-            Menu::RecentFile    => ,
-            Menu::Sort          => ,
-            Menu::Position      => ,
-            Menu::Rotate        => ,
-            Menu::Channels      => ,
-            Menu::Backgrounds   => ,
-            Menu::Zoom          => ,
-            _                   => ,
-        }*/
-        false
-    }
+}
 
-    pub fn is_in_root(&mut self, menu: Menu ) -> bool {
-        if self.current_menu == menu { return true; }
-        match menu {
-            Menu::File          => self.current_menu == Menu::Recents || self.current_menu == Menu::RecentFile,
-            Menu::Options       => self.current_menu != Menu::Recents && self.current_menu != Menu::RecentFile,
-            Menu::Recents       => self.current_menu == Menu::RecentFile,
-            Menu::RecentFile    => false,
-            Menu::Sort          => false,
-            Menu::Position      => false,
-            Menu::Rotate        => false,
-            Menu::Channels      => false,
-            Menu::Backgrounds   => false,
-            Menu::Zoom          => false,
-            _                   => true,
+macro_rules! show_menu {
+    ($menvar:expr, $ctx:ident, $menu:expr, $ui:ident, $width: expr, $content:block) => {
+        if $menvar.menu_is_active( $ctx, $menu) {
+            let pos = $menvar.pos( $menu );
+            let id = egui::ViewportId::from_hash_of(stringify!($menu));
+            let (mut w,h) = if $menu == Menu::None { (400.0, 40.0) } else { (400.0, 400.0) };
+            if $width > 1.0 { w = $width; }
+            $ctx.show_viewport_immediate(
+                id,
+                egui::ViewportBuilder::default()
+                    .with_position(pos)
+                    .with_always_on_top()
+                    .with_decorations(false)
+                    .with_inner_size([w, h]),
+                |ctx, _| {
+                    egui::CentralPanel::default()
+                    .frame(egui::Frame::default().fill(ctx.style().visuals.window_fill()).inner_margin(2.0))
+                    .show( ctx, |$ui|
+                    {
+                        if $menu == Menu::None {
+                            $ui.horizontal(|$ui| {
+                                $content
+                                let desired_size = $ui.min_size() + egui::Vec2{x:4.0,y:4.0};
+                                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
+                            });
+                        }
+                        else {
+                            $ui.vertical(|$ui| {
+                                $ui.set_min_width(100.0); // bacause the long separator
+                                $content
+                                if $width <= 1.0 {
+                                    let desired_size = $ui.min_size() + egui::Vec2{x:4.0,y:4.0};
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
+                                }
+                            });
+                        }
+                        if $menvar.in_focus_or_root($ui,$menu) {
+                        }
+                    });
+                }
+            );
         }
-    }
-
+    };
 }
 
 impl ImageViewer {
-
-    pub fn show_menu_viewport<F>(
-        &mut self,
-        menvar: &mut MenuVariables,
-        ctx: &egui::Context, 
-        menu: Menu, 
-        add_contents: F
-    ) 
-    where F: FnMut(&mut egui::Ui) 
-    {
-        // Csak akkor csinálunk bármit, ha a menü aktív
-        if !menvar.menu_is_active(ctx, menu) {
-            return;
-        }
-
-        let (id_str, pos) = match menu {
-            Menu::File          => ("file_menu_viewport",       menvar.file_menu_pos + menvar.menu_pos.to_vec2()),
-            Menu::Options       => ("options_menu_viewport",    menvar.options_menu_pos + menvar.menu_pos.to_vec2()),
-            Menu::Recents       => ("recents_menu_viewport",    menvar.recents_menu_pos + menvar.menu_pos.to_vec2()),
-            Menu::RecentFile    => ("recentfile_menu_viewport", menvar.recentfile_menu_pos + menvar.menu_pos.to_vec2()),
-            Menu::Sort          => ("sort_menu_viewport",       menvar.sort_menu_pos + menvar.menu_pos.to_vec2()),
-            Menu::Position      => ("position_menu_viewport",   menvar.position_menu_pos + menvar.menu_pos.to_vec2()),
-            Menu::Rotate        => ("rotate_menu_viewport",     menvar.rotate_menu_pos + menvar.menu_pos.to_vec2()),
-            Menu::Channels      => ("channels_menu_viewport",   menvar.channels_menu_pos + menvar.menu_pos.to_vec2()),
-            Menu::Backgrounds   => ("background_menu_viewport", menvar.background_menu_pos + menvar.menu_pos.to_vec2()),
-            Menu::Zoom          => ("zoom_menu_viewport",       menvar.zoom_menu_pos + menvar.menu_pos.to_vec2()),
-            _                   => ("menu_viewport",            menvar.menu_pos),
-        };
-
-        let mut add_contents_ref = add_contents;
-        
-        ctx.show_viewport_immediate(
-            egui::ViewportId::from_hash_of(id_str),
-            egui::ViewportBuilder::default()
-                .with_position(pos)
-                .with_always_on_top()
-                .with_inner_size([400.0, 400.0]) // A méretet majd a tartalom állítja
-                .with_decorations(false),
-            |ctx, _| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    if menu == Menu::None {
-                        ui.horizontal(|ui| {
-                            // Itt hívjuk meg a kívülről kapott tartalomépítő kódot
-                            add_contents_ref(ui);
-                            // Automatikus méretezés a tartalomhoz
-                            let desired_size = ui.min_size();
-                            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
-                        });
-                    }
-                    else {
-                        ui.vertical(|ui| {
-                            // Itt hívjuk meg a kívülről kapott tartalomépítő kódot
-                            add_contents_ref(ui);
-                            // Automatikus méretezés a tartalomhoz
-                            let desired_size = ui.min_size();
-                            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
-                        });
-                    }
-                });
-            }
-        );
-    }
 
     pub fn draw_main_menu(&mut self, ctx: &egui::Context, _change_magnify: &mut f32, _mouse_zoom: &mut bool) {
         // Menüsor kialakítása
 
         //let main_window_focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         
-        let mut menvar = self.menvar.clone();
-
-        menvar.menu_pos = ctx.input(|i| {
+        self.menvar.menu_pos = ctx.input(|i| {
             let main_window_rect = i.viewport().outer_rect.unwrap_or(egui::Rect::EVERYTHING);
-            main_window_rect.min + egui::vec2(8.0, 31.0)
+            main_window_rect.min + egui::vec2(8.0, 32.0)
         });
 
         egui::TopBottomPanel::top("menu_placeholder").show(ctx, |ui| {
@@ -145,17 +211,17 @@ impl ImageViewer {
         });
 
         // Főmenü
-        self.show_menu_viewport(&mut menvar, ctx, Menu::None, |ui| {
+        show_menu!(self.menvar, ctx, Menu::None, ui, 0.0, {
             let file_btn = ui.button("File");
             if file_btn.clicked() {
-                menvar.file_menu_pos = file_btn.rect.left_bottom();
-                menvar.change_menu(ctx,Menu::File) ;
+                self.menvar.file_menu_pos = file_btn.rect.left_bottom();
+                self.menvar.change_menu(ctx,Menu::File) ;
             }
 
             let options_btn = ui.button("Options");
             if options_btn.clicked() {
-                menvar.options_menu_pos = options_btn.rect.left_bottom();
-                menvar.change_menu(ctx,Menu::Options);
+                self.menvar.options_menu_pos = options_btn.rect.left_bottom();
+                self.menvar.change_menu(ctx,Menu::Options);
             }
 
             let prev_button = egui::Button::new("<<").shortcut_text(ctx.format_shortcut(
@@ -163,7 +229,7 @@ impl ImageViewer {
             ));
             
             if ui.add(prev_button).clicked() {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
                 self.navigation(ctx, -1);
                 ui.close_kind(egui::UiKind::Menu);
             }
@@ -171,14 +237,16 @@ impl ImageViewer {
                 &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::N),
             ));
             if ui.add(next_button).clicked() {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
                 self.navigation(ctx, 1);
                 ui.close_kind(egui::UiKind::Menu);
             }
-            ui.separator();
 
             let mut frame_copy: Option<usize> = None;
             if self.anim_data.is_some() {
+                
+                ui.separator();
+                
                 let play_btn = if self.anim_playing {
                     "⏸ Stop"
                 } else {
@@ -187,7 +255,7 @@ impl ImageViewer {
                 if ui.button(play_btn).clicked()
                     || ui.input(|i| i.key_pressed(egui::Key::Space))
                 {
-                    menvar.change_menu(ctx,Menu::None);
+                    self.menvar.change_menu(ctx,Menu::None);
                     self.anim_playing = !self.anim_playing;
                     if self.anim_playing
                         && !self.anim_loop
@@ -199,31 +267,28 @@ impl ImageViewer {
                 }
 
                 if ui.button("⏮").clicked() {
-                    menvar.change_menu(ctx,Menu::None);
+                    self.menvar.change_menu(ctx,Menu::None);
                     self.current_frame = 0;
                 }
 
                 // Kézi léptetés (csak ha áll az animáció, vagy bárki nyomogatja)
                 if ui.button("◀").clicked() || ui.input(|i| i.key_pressed(egui::Key::ArrowLeft))
                 {
-                    menvar.change_menu(ctx,Menu::None);
+                    self.menvar.change_menu(ctx,Menu::None);
                     self.anim_playing = false;
                     if self.current_frame == 0 {
                         self.current_frame = self.total_frames - 1;
                     } else {
                         self.current_frame -= 1;
                     }
-                    // Textúra frissítése a megjelenítéshez
                     frame_copy = Some(self.current_frame);
                 }
 
-                if ui.button("▶").clicked()
-                    || ui.input(|i| i.key_pressed(egui::Key::ArrowRight))
+                if ui.button("▶").clicked() || ui.input(|i| i.key_pressed(egui::Key::ArrowRight))
                 {
-                    menvar.change_menu(ctx,Menu::None);
+                    self.menvar.change_menu(ctx,Menu::None);
                     self.anim_playing = false;
                     self.current_frame = (self.current_frame + 1) % self.total_frames;
-                    // Textúra frissítése a megjelenítéshez
                     frame_copy = Some(self.current_frame);
                     
                 }
@@ -243,14 +308,14 @@ impl ImageViewer {
         });
 
         // File menü
-        self.show_menu_viewport(&mut menvar, ctx,Menu::File, |ui| {
+        show_menu!(self.menvar, ctx, Menu::File, ui, 0.0, {
             let open_button =
                 egui::Button::new("Open ...").shortcut_text(ctx.format_shortcut(
                     &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::O),
                 ));
             if ui.add(open_button).clicked() {
                 self.open_image_dialog(ctx, &None);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let reopen_button =
@@ -259,7 +324,7 @@ impl ImageViewer {
                 ));
             if ui.add(reopen_button).clicked() {
                 self.load_image(ctx, true);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let save_button =
@@ -269,7 +334,7 @@ impl ImageViewer {
             if ui.add(save_button).clicked() {
                 self.save_original = true;
                 self.starting_save(&None);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let save_button =
@@ -279,16 +344,16 @@ impl ImageViewer {
             if ui.add(save_button).clicked() {
                 self.save_original = false;
                 self.starting_save(&None);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
             
             let recents_btn = ui.button("Recent Paths ...");
             if recents_btn.clicked() {
-                menvar.recents_menu_pos = recents_btn.rect.right_top();
-                menvar.change_menu(ctx,Menu::Recents);
+                self.menvar.recents_menu_pos = pos( ui, recents_btn.rect.right_top(), self.menvar.file_menu_pos);
+                self.menvar.change_menu(ctx,Menu::Recents);
             }
 
-            ui.separator();
+            separator(ui);
 
             let copy_button = egui::Button::new("Copy").shortcut_text(ctx.format_shortcut(
                 &egui::KeyboardShortcut::new(egui::Modifiers::ALT, egui::Key::C),
@@ -296,7 +361,7 @@ impl ImageViewer {
             if ui.add(copy_button).clicked() {
                 self.save_original = true;
                 self.copy_to_clipboard();
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let copy_button = egui::Button::new("Copy view").shortcut_text(
@@ -308,7 +373,7 @@ impl ImageViewer {
             if ui.add(copy_button).clicked() {
                 self.save_original = false;
                 self.copy_to_clipboard();
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let paste_button =
@@ -317,7 +382,7 @@ impl ImageViewer {
                 ));
             if ui.add(paste_button).clicked() {
                 self.copy_from_clipboard(ctx);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let copy_button = egui::Button::new("Change").shortcut_text(ctx.format_shortcut(
@@ -326,7 +391,7 @@ impl ImageViewer {
             if ui.add(copy_button).clicked() {
                 self.save_original = false;
                 self.change_with_clipboard(ctx);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let copy_button = egui::Button::new("Change view").shortcut_text(ctx.format_shortcut(
@@ -335,111 +400,121 @@ impl ImageViewer {
             if ui.add(copy_button).clicked() {
                 self.save_original = true;
                 self.change_with_clipboard(ctx);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
-            ui.separator();
+            separator(ui);
 
             let exit_button = egui::Button::new("Exit").shortcut_text(ctx.format_shortcut(
                 &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Escape),
             ));
             if ui.add(exit_button).clicked() {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
 
             if ui.button("About IView...").clicked() {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
                 self.show_about_window = true;
             }
 
         });
 
+        let mut recfil = None;
+
         // Recent paths list
-        self.show_menu_viewport(&mut menvar, ctx,Menu::Recents, |ui| {
+        show_menu!(self.menvar, ctx, Menu::Recents, ui, 0.0, {
            let files: Vec<_> = self.config.recent_files.iter().cloned().collect();
+           let mut i: usize = 0;
            for path in files {
                 let file_name = path.file_name().map(|n| n.to_string_lossy())
                     .unwrap_or_default();
                 let folder_path = path.parent().map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "Root".to_string());
                 let button = ui.button(&*file_name);
-                button.clone().on_hover_text(folder_path);
+                button.clone().on_hover_text(&folder_path);
                 if button.clicked() {
-                    menvar.recentfile_menu_pos = button.rect.right_top();
-                    menvar.change_menu(ctx,Menu::RecentFile);
+                    recfil = Some(path);
+                    self.menvar.recentfile_menu_pos = pos( ui, button.rect.right_top(), self.menvar.recents_menu_pos);
+                    self.menvar.recentidx_parm = i;
+                    self.menvar.change_menu(ctx,Menu::RecentFile);
                 }
+                i += 1;
             }
         });
         
-
+        if let Some(rec) = recfil {
+            self.menvar.recentfile = rec.into();
+        }
+        
+        
         // Recent file options
-        self.show_menu_viewport(&mut menvar, ctx,Menu::RecentFile, |ui| {
+        show_menu!(self.menvar, ctx, Menu::RecentFile, ui, 0.0, {
             if ui.button("Open file").clicked() {
-                self.open_image(ctx, &menvar.recentfile, true);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
+                self.open_image(ctx, &self.menvar.recentfile.clone(), true);
             }
             if ui.button("Open File Here").clicked() {
-                self.open_image_dialog(ctx, &Some(menvar.recentfile.clone()));
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
+                self.open_image_dialog(ctx, &Some(self.menvar.recentfile.clone()));
             }
             if ui.button("Save Here").clicked() {
+                self.menvar.change_menu(ctx,Menu::None);
                 self.save_original = true;
-                self.starting_save(&Some(menvar.recentfile.clone()));
-                menvar.change_menu(ctx,Menu::None);
+                self.starting_save(&Some(self.menvar.recentfile.clone()));
             }
             if ui.button("Save View Here ").clicked() {
+                self.menvar.change_menu(ctx,Menu::None);
                 self.save_original = false;
-                self.starting_save(&Some(menvar.recentfile.clone()));
-                menvar.change_menu(ctx,Menu::None);
+                self.starting_save(&Some(self.menvar.recentfile.clone()));
             }
         });
         
         
         // Options menu
-        self.show_menu_viewport(&mut menvar, ctx,Menu::Options, |ui| {
+        show_menu!(self.menvar, ctx, Menu::Options, ui, 0.0, {
             let sort_btn = ui.button("Order of images");
             if sort_btn.clicked() {
-                menvar.sort_menu_pos = sort_btn.rect.right_top();
-                menvar.change_menu(ctx,Menu::Sort);
+                self.menvar.sort_menu_pos = pos( ui, sort_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.change_menu(ctx,Menu::Sort);
             }
             let position_btn = ui.button("Window position");
             if position_btn.clicked() {
-                menvar.position_menu_pos = position_btn.rect.right_top();
-                menvar.change_menu(ctx,Menu::Position);
+                self.menvar.position_menu_pos = pos( ui, position_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.change_menu(ctx,Menu::Position);
             }
             let rotate_btn = ui.button("Rotate");
             if rotate_btn.clicked() {
-                menvar.rotate_menu_pos = rotate_btn.rect.right_top();
-                menvar.change_menu(ctx,Menu::Rotate);
+                self.menvar.rotate_menu_pos = pos( ui, rotate_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.change_menu(ctx,Menu::Rotate);
             }
             let background_btn = ui.button("Background");
             if background_btn.clicked() {
-                menvar.background_menu_pos = background_btn.rect.right_top();
-                menvar.change_menu(ctx,Menu::Backgrounds);
+                self.menvar.background_menu_pos = pos( ui, background_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.change_menu(ctx,Menu::Backgrounds);
             }
             let channels_btn = ui.button("Channels");
             if channels_btn.clicked() {
-                menvar.channels_menu_pos = channels_btn.rect.right_top();
-                menvar.change_menu(ctx,Menu::Channels);
+                self.menvar.channels_menu_pos = pos( ui, channels_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.change_menu(ctx,Menu::Channels);
             }
             let zoom_btn = ui.button("Zoom");
             if zoom_btn.clicked() {
-                menvar.zoom_menu_pos = zoom_btn.rect.right_top();
-                menvar.change_menu(ctx,Menu::Zoom);
+                self.menvar.zoom_menu_pos = pos( ui, zoom_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.change_menu(ctx,Menu::Zoom);
             }
             let col_button = egui::Button::new("Color correction").shortcut_text(ctx.format_shortcut(
                     &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::C),
                 ));
             if ui.add(col_button).clicked() {
                 self.color_correction_dialog = true;
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             if ui.selectable_label(self.refit_reopen, "Refit at Reopen").clicked()
             {
                 self.refit_reopen = !self.refit_reopen;
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             if ui.selectable_label(self.use_gpu, "Use Gpu (off at restart)").clicked()
@@ -451,17 +526,17 @@ impl ImageViewer {
                     self.gpu_tried_init = false;
                     ctx.request_repaint();
                 }
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             if ui.selectable_label(self.fit_open, "Fit at Open").clicked() {
                 self.fit_open = !self.fit_open;
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             if ui.selectable_label(self.same_correction_open, "No Correction at Open").clicked() {
                 self.same_correction_open = !self.same_correction_open;
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let info_button = egui::Button::new("Info").shortcut_text(ctx.format_shortcut(
@@ -469,17 +544,17 @@ impl ImageViewer {
             ));
             if ui.add(info_button).clicked() {
                 self.show_info = true;
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
             if ui.selectable_label(self.anim_loop, "Animation Loop").clicked()
             {
                 self.anim_loop = !self.anim_loop;
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
         });
 
         // sort menu
-        self.show_menu_viewport(&mut menvar, ctx,Menu::Sort, |ui| {
+        show_menu!(self.menvar, ctx, Menu::Sort, ui, 0.0, {
             let mut changed = false;
             if ui.selectable_value(&mut self.sort, SortDir::Name, "by name").clicked() {
                 changed = true;
@@ -495,13 +570,13 @@ impl ImageViewer {
             }
             if changed {
                 self.make_image_list(); // Újrarendezzük a listát az új szempont szerint
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
         });
         
 
         // position menu
-        self.show_menu_viewport(&mut menvar, ctx,Menu::Position, |ui| {
+        show_menu!(self.menvar, ctx, Menu::Position, ui, 0.0, {
             let mut changed = false;
             if ui
                 .selectable_value(&mut self.center, false, "Left Up")
@@ -517,12 +592,106 @@ impl ImageViewer {
             }
             if changed {
                 self.load_image(ctx, false);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
+            }
+        });
+
+        // zoom menu
+        show_menu!(self.menvar, ctx, Menu::Zoom, ui, 90.0, {
+            let mut need = -2.0;
+            if ui.add(egui::Button::new("Fit").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::F)))).clicked() {
+                need = -1.0;
+            }
+            separator(ui);
+            if ui.add(egui::Button::new("1:1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Num1)))).clicked() {
+                need = 1.0;
+            }
+            if ui.add(egui::Button::new("2:1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Num2)))).clicked() {
+                need = 2.0;
+            }
+            if ui.add(egui::Button::new("3:1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Num3)))).clicked() {
+                need = 3.0;
+            }
+            if ui.add(egui::Button::new("4:1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Num4)))).clicked() {
+                need = 4.0;
+            }
+            if ui.add(egui::Button::new("5:1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Num5)))).clicked() {
+                need = 5.0;
+            }
+            if ui.add(egui::Button::new("6:1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Num6)))).clicked() {
+                need = 6.0;
+            }
+            if ui.add(egui::Button::new("7:1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Num7)))).clicked() {
+                need = 7.0;
+            }
+            if ui.add(egui::Button::new("8:1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Num8)))).clicked() {
+                need = 8.0;
+            }
+            if ui.add(egui::Button::new("9:1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Num9)))).clicked() {
+                need = 9.0;
+            }
+            if ui.add(egui::Button::new("10:1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Num0)))).clicked() {
+                need = 10.0;
+            }
+            separator(ui);
+            if ui.add(egui::Button::new("0.8").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num1)))).clicked() {
+                need = 0.8;
+            }
+            if ui.add(egui::Button::new("0.75").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num2)))).clicked() {
+                need = 0.75;
+            }
+            if ui.add(egui::Button::new("0.5").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num3)))).clicked() {
+                need = 0.5;
+            }
+            if ui.add(egui::Button::new("0.45").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num4)))).clicked() {
+                need = 0.45;
+            }
+            if ui.add(egui::Button::new("0.4").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num5)))).clicked() {
+                need = 0.4;
+            }
+            if ui.add(egui::Button::new("0.35").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num6)))).clicked() {
+                need = 0.35;
+            }
+            if ui.add(egui::Button::new("0.3").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num7)))).clicked() {
+                need = 0.3;
+            }
+            if ui.add(egui::Button::new("0.25").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num8)))).clicked() {
+                need = 0.25;
+            }
+            if ui.add(egui::Button::new("0.2").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num9)))).clicked() {
+                need = 0.2;
+            }
+            if ui.add(egui::Button::new("0.1").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num0)))).clicked() {
+                need = 0.1;
+            }
+            if need != -2.0 {
+                self.menvar.change_menu(ctx,Menu::None);
             }
         });
 
         // channels menu
-        self.show_menu_viewport(&mut menvar, ctx,Menu::Channels, |ui| {
+        show_menu!(self.menvar, ctx, Menu::Channels, ui, 0.0, {
             let red_button = egui::Button::new(format!( "Red{}",
                 if self.color_settings.show_r { "✔" } else { "" }
             ))
@@ -533,7 +702,7 @@ impl ImageViewer {
             if ui.add(red_button).clicked() {
                 self.color_settings.show_r = !self.color_settings.show_r;
                 self.review(ctx, true, false);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let green_button = egui::Button::new(format!( "Green{}",
@@ -546,7 +715,7 @@ impl ImageViewer {
             if ui.add(green_button).clicked() {
                 self.color_settings.show_g = !self.color_settings.show_g;
                 self.review(ctx, true, false);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let blue_button = egui::Button::new(format!( "Blue{}",
@@ -559,7 +728,7 @@ impl ImageViewer {
             if ui.add(blue_button).clicked() {
                 self.color_settings.show_b = !self.color_settings.show_b;
                 self.review(ctx, true, false);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let invert_button = egui::Button::new(format!( "Invert{}",
@@ -572,12 +741,12 @@ impl ImageViewer {
             if ui.add(invert_button).clicked() {
                 self.color_settings.invert = !self.color_settings.invert;
                 self.review(ctx, true, false);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
         });
 
         // rotate menu
-        self.show_menu_viewport(&mut menvar, ctx,Menu::Rotate, |ui| {
+        show_menu!(self.menvar, ctx, Menu::Rotate, ui, 0.0, {
             let up_button = egui::Button::new("Up").shortcut_text(ctx.format_shortcut(
                 &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::ArrowUp),
             ));
@@ -585,7 +754,7 @@ impl ImageViewer {
                 self.color_settings.rotate =
                     self.color_settings.rotate.add(Rotate::Rotate180);
                 self.review(ctx, true, false);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let right_button = egui::Button::new("Right").shortcut_text(
@@ -598,7 +767,7 @@ impl ImageViewer {
                 self.color_settings.rotate =
                     self.color_settings.rotate.add(Rotate::Rotate90);
                 self.review(ctx, true, true);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let left_button = egui::Button::new("Left").shortcut_text(
@@ -611,7 +780,7 @@ impl ImageViewer {
                 self.color_settings.rotate =
                     self.color_settings.rotate.add(Rotate::Rotate270);
                 self.review(ctx, true, true);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
 
             let down_button = egui::Button::new("Stand").shortcut_text(
@@ -625,45 +794,43 @@ impl ImageViewer {
                     || self.color_settings.rotate == Rotate::Rotate270;
                 self.color_settings.rotate = Rotate::Rotate0;
                 self.review(ctx, true, r);
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
         });
 
         // rotate menu
-        self.show_menu_viewport(&mut menvar, ctx,Menu::Backgrounds, |ui| {
+        show_menu!(self.menvar, ctx, Menu::Backgrounds, ui, 0.0, {
             if ui.radio_value(&mut self.bg_style, BackgroundStyle::Black, "Black").clicked()
             {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
             if ui.radio_value(&mut self.bg_style, BackgroundStyle::Gray, "Gray").clicked()
             {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
             if ui.radio_value(&mut self.bg_style, BackgroundStyle::White, "White").clicked()
             {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
             if ui.radio_value(&mut self.bg_style, BackgroundStyle::Green, "Green").clicked()
             {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
-            ui.separator();
+            separator(ui);
             if ui.radio_value(&mut self.bg_style,BackgroundStyle::DarkBright,"🏁 DarkBright").clicked()
             {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
             if ui.radio_value(&mut self.bg_style,BackgroundStyle::GreenMagenta,"🏁 GreenMagenta").clicked()
             {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
             if ui.radio_value(&mut self.bg_style,BackgroundStyle::BlackBrown,"🏁 BlackBrown").clicked()
             {
-                menvar.change_menu(ctx,Menu::None);
+                self.menvar.change_menu(ctx,Menu::None);
             }
         });
         
-        self.menvar = menvar;
-
     }
 
 }
