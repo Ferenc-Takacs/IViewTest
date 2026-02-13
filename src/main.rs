@@ -211,6 +211,7 @@ pub enum Menu {
 
 
 pub struct MenuVariables {
+    pub menu_activity: Vec<(Menu,bool)>,
     pub recentfile: PathBuf,
     pub recentidx_last: usize,
     pub recentidx_curr: usize,
@@ -235,6 +236,7 @@ pub struct MenuVariables {
 impl Default for MenuVariables {
     fn default() -> Self {
         Self {
+            menu_activity: Vec::new(),
             recentfile: PathBuf::default(),
             recentidx_last: 1000,
             recentidx_curr: 1000,

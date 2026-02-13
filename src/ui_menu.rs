@@ -23,10 +23,10 @@ pub fn pos(ui: &mut egui::Ui, pos1:egui::Pos2, pos2:egui::Pos2 ) -> egui::Pos2 {
 
 impl MenuVariables {
 
-    fn str_menu(&self, menu: Menu) -> String {
-        if Menu::RecentFile == menu { format!("RecentFile_{:?}_{:?}", self.recentidx_last, self.recentidx_curr) }
-        else { format!("{:?}",menu) }
-    }
+    //fn str_menu(&self, menu: Menu) -> String {
+    //    if Menu::RecentFile == menu { format!("RecentFile_{:?}_{:?}", self.recentidx_last, self.recentidx_curr) }
+    //    else { format!("{:?}",menu) }
+    //}
 
     fn pos(&self, menu: Menu) -> egui::Pos2 {
         match menu {
@@ -60,19 +60,6 @@ impl MenuVariables {
         }
     }
 
-    fn menu_eq(&self, menu: Menu, parm: bool ) -> bool {
-        if self.current_menu != menu { return false; }
-        if Menu::RecentFile == menu {
-            if parm {
-                return self.recentidx_curr == self.recentidx_parm;
-            }
-            else {
-                return self.recentidx_curr == self.recentidx_last;
-            }
-        }
-        true
-    }
-
     fn is_in_root(&self, menu: Menu ) -> bool {
         match self.current_menu {
             Menu::None          => false,
@@ -89,20 +76,17 @@ impl MenuVariables {
         }
     }
 
-    fn is_child(&self, build_menu: Menu ) -> bool {
-        match build_menu {
-            Menu::None          => false,
-            Menu::File          => self.current_menu == Menu::None,
-            Menu::Options       => self.current_menu == Menu::None,
-            Menu::Recents       => self.current_menu == Menu::File,
-            Menu::RecentFile    => self.current_menu == Menu::Recents,
-            Menu::Sort          => self.current_menu == Menu::Options,
-            Menu::Position      => self.current_menu == Menu::Options,
-            Menu::Rotate        => self.current_menu == Menu::Options,
-            Menu::Channels      => self.current_menu == Menu::Options,
-            Menu::Backgrounds   => self.current_menu == Menu::Options,
-            Menu::Zoom          => self.current_menu == Menu::Options,
+    fn menu_eq(&self, menu: Menu, parm: bool ) -> bool {
+        if self.current_menu != menu { return false; }
+        if Menu::RecentFile == menu {
+            if parm {
+                return self.recentidx_curr == self.recentidx_parm;
+            }
+            else {
+                return self.recentidx_curr == self.recentidx_last;
+            }
         }
+        true
     }
 
     pub fn change_menu(&mut self, ctx: &egui::Context, mut menu: Menu ) -> bool {
@@ -137,26 +121,8 @@ impl MenuVariables {
         }
     }
 
-    pub fn in_focus_or_route(&mut self, ui: &egui::Ui, build_menu: Menu ) -> bool {
-        if self.is_in_root(build_menu) || self.is_child(build_menu) || build_menu == Menu::None {
-            return true;
-        }
-        if !self.menu_eq(build_menu,false) {
-            //println!("{} != {}", self.str_menu(build_menu), self.str_menu(self.current_menu));
-            return false;
-        }
-        if ui.input(|i| i.viewport().focused.unwrap_or(true)) {
-            return true;
-        }
-        if !self.closing_request { 
-            //println!("{} {} lost", self.str_menu(build_menu), self.str_menu(self.current_menu));
-            self.closing_request = true;
-            self.closing_request_time = ui.input(|i| i.time);
-        }
-        false
-    }
-
     pub fn menu_is_opened(&mut self, ctx: &egui::Context, build_menu: Menu ) -> bool {
+        if build_menu == Menu::None { self.after_menus(ctx); } // better late than never
         if self.closing_request && ctx.input(|i| i.time) - self.closing_request_time > 0.18 {
             self.current_menu = Menu::None;
             self.recentidx_curr = 1000;
@@ -172,6 +138,25 @@ impl MenuVariables {
         }
         if build_menu == Menu::RecentFile && self.current_menu == build_menu { return true; }
         return self.is_in_root(build_menu); 
+    }
+
+    pub fn after_menus(&mut self, ctx: &egui::Context) {
+        if self.menu_activity.len() > 0 {
+            if self.menu_activity.len() == 1 {
+            }
+            else {
+                let mut act = false;
+                for (menu,focus) in &self.menu_activity {
+                    if *menu == Menu:: None { continue; }
+                    if *focus { act = true; }
+                }
+                if !act {
+                    self.closing_request = true;
+                    self.closing_request_time = ctx.input(|i| i.time);
+                }
+            }
+            self.menu_activity.clear();
+        }
     }
 
 }
@@ -194,7 +179,8 @@ macro_rules! show_menu {
                     .frame(egui::Frame::default().fill(ctx.style().visuals.window_fill()).inner_margin(2.0))
                     .show( ctx, |$ui|
                     {
-                        $menvar.in_focus_or_route( $ui,$build_menu);
+                        $menvar.menu_activity.push( ($build_menu, $ui.input(|i| i.viewport().focused.unwrap_or(true) ) ) );
+                        
                         if $build_menu == Menu::None {
                             $ui.horizontal(|$ui| {
                                 $content
@@ -214,6 +200,7 @@ macro_rules! show_menu {
             );
         }
     };
+    
 }
 
 
@@ -432,6 +419,7 @@ impl ImageViewer {
             if ui.add(exit_button).clicked() {
                 self.menvar.change_menu(ctx,Menu::None);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                ctx.send_viewport_cmd_to( egui::ViewportId::ROOT, egui::ViewportCommand::Close );
             }
 
             if ui.button("About IView...").clicked() {
@@ -846,6 +834,7 @@ impl ImageViewer {
             }
         });
         
+        self.menvar.after_menus(ctx);
     }
 
 }
