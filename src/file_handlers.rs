@@ -950,6 +950,8 @@ impl ImageViewer {
             }
 
             self.original_image = Some(img);
+            self.resized_image = None;
+            self.resize = 1.0;
 
             // Először alaphelyzetbe állítjuk az animációs adatokat
             self.anim_data = None;
@@ -969,7 +971,7 @@ impl ImageViewer {
             }
 
             if (self.refit_reopen || !reopen) && self.fit_open {
-                self.first_appear = 1;
+                self.want_magnify = -1.0;
             }
             // Cím frissítése
             if let Some(file_name) = filepath.file_name().and_then(|n| n.to_str()) {

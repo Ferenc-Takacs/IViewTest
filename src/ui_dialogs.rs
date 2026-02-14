@@ -83,7 +83,7 @@ impl ImageViewer {
                         });
 
                         if self.recent_file_modified || is_new_window {
-                            self.recent_window_size = ui.min_size();
+                            self.recent_window_size = ui.min_size().into();
                             if self.recent_window_size.x > 1.0 {
                                 self.recent_file_modified = false;
                                 //println!("{:?}",self.recent_window_size);

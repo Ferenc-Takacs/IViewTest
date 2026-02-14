@@ -3,7 +3,7 @@ use crate::ImageViewer;
  
 impl ImageViewer {
 
-    pub fn handle_shortcuts(&mut self, ctx: &egui::Context, change_magnify :&mut f32, mouse_zoom: &mut bool){
+    pub fn handle_shortcuts(&mut self, ctx: &egui::Context){
 
        // Gyorsbillentyűk figyelése
         if ctx.input_mut(|i| {
@@ -224,6 +224,235 @@ impl ImageViewer {
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
+                egui::Key::Num0,
+            ))
+        }) {
+            // 0
+            if self.magnify != 10.0 {
+                self.want_magnify = 10.0;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::Num1,
+            ))
+        }) {
+            // 1
+            if self.magnify != 1.0 {
+                self.want_magnify = 1.0;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::Num2,
+            ))
+        }) {
+            // 2
+            if self.magnify != 2.0 {
+                self.want_magnify = 2.0;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::Num3,
+            ))
+        }) {
+            // 3
+            if self.magnify != 3.0 {
+                self.want_magnify = 3.0;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::Num4,
+            ))
+        }) {
+            // 4
+            if self.magnify != 4.0 {
+                self.want_magnify = 4.0;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::Num5,
+            ))
+        }) {
+            // 5
+            if self.magnify != 5.0 {
+                self.want_magnify = 5.0;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::Num6,
+            ))
+        }) {
+            if self.magnify != 6.0 {
+                self.want_magnify = 6.0;
+                self.review(ctx,true, false);
+            }
+            self.show_info = !self.show_info;
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::Num7,
+            ))
+        }) {
+            if self.magnify != 7.0 {
+                self.want_magnify = 7.0;
+                self.review(ctx,true, false);
+            }
+            self.show_info = !self.show_info;
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::Num8,
+            ))
+        }) {
+            if self.magnify != 8.0 {
+                self.want_magnify = 8.0;
+                self.review(ctx,true, false);
+            }
+            self.show_info = !self.show_info;
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::Num9,
+            ))
+        }) {
+            if self.magnify != 9.0 {
+                self.want_magnify = 9.0;
+                self.review(ctx,true, false);
+            }
+            self.show_info = !self.show_info;
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::SHIFT,
+                egui::Key::Num0,
+            ))
+        }) {
+            // 0
+            if self.magnify != 0.1 {
+                self.want_magnify = 0.1;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::SHIFT,
+                egui::Key::Num1,
+            ))
+        }) {
+            // 1
+            if self.magnify != 0.8 {
+                self.want_magnify = 0.8;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::SHIFT,
+                egui::Key::Num2,
+            ))
+        }) {
+            // 2
+            if self.magnify != 0.75 {
+                self.want_magnify = 0.75;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::SHIFT,
+                egui::Key::Num3,
+            ))
+        }) {
+            // 3
+            if self.magnify != 0.5 {
+                self.want_magnify = 0.5;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::SHIFT,
+                egui::Key::Num4,
+            ))
+        }) {
+            // 4
+            if self.magnify != 0.45 {
+                self.want_magnify = 0.45;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::SHIFT,
+                egui::Key::Num5,
+            ))
+        }) {
+            // 5
+            if self.magnify != 0.4 {
+                self.want_magnify = 0.4;
+                self.review(ctx,true, false);
+            }
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::SHIFT,
+                egui::Key::Num6,
+            ))
+        }) {
+            if self.magnify != 0.35 {
+                self.want_magnify = 0.35;
+                self.review(ctx,true, false);
+            }
+            self.show_info = !self.show_info;
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::SHIFT,
+                egui::Key::Num7,
+            ))
+        }) {
+            if self.magnify != 0.3 {
+                self.want_magnify = 0.3;
+                self.review(ctx,true, false);
+            }
+            self.show_info = !self.show_info;
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::SHIFT,
+                egui::Key::Num8,
+            ))
+        }) {
+            if self.magnify != 0.25 {
+                self.want_magnify = 0.25;
+                self.review(ctx,true, false);
+            }
+            self.show_info = !self.show_info;
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::SHIFT,
+                egui::Key::Num9,
+            ))
+        }) {
+            if self.magnify != 0.2 {
+                self.want_magnify = 0.2;
+                self.review(ctx,true, false);
+            }
+            self.show_info = !self.show_info;
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::F,
+            ))
+        }) {
+            // f
+            self.want_magnify = -1.0;
+            self.review(ctx,true, false);
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
                 egui::Key::Escape,
             ))
         }) {
@@ -260,9 +489,9 @@ impl ImageViewer {
                 if i.modifiers.command {
                     for event in &i.events {
                         if let egui::Event::MouseWheel { unit: _, delta, .. } = event {
-                            *change_magnify = delta.y;
-                            if *change_magnify != 0.0 {
-                                *mouse_zoom = true;
+                            self.change_magnify = delta.y;
+                            if self.change_magnify != 0.0 {
+                                self.mouse_zoom = true;
                             }
                         }
                     }
@@ -270,10 +499,10 @@ impl ImageViewer {
                     // magnify without command and text magnify
                     if i.key_pressed(egui::Key::Plus) {
                         // bigger
-                        *change_magnify = 1.0;
+                        self.change_magnify = 1.0;
                     } else if i.key_pressed(egui::Key::Minus) {
                         // smaller
-                        *change_magnify = -1.0;
+                        self.change_magnify = -1.0;
                     }
                 }
             });

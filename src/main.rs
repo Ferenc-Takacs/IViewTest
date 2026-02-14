@@ -24,10 +24,12 @@ mod ui_draw;
 mod ui_dialogs;
 mod image_processing;
 mod exif_my;
+mod pf32;
 use colors::*;
 use crate::image_processing::*;
 use crate::file_handlers::*;
 use crate::exif_my::*;
+use crate::pf32::Pf32;
 //use arboard::Clipboard;
 use eframe::egui;
 //use image::AnimationDecoder;
@@ -89,17 +91,20 @@ struct ImageViewer {
     pub list_of_images: Vec<fs::DirEntry>, // kép nevek listája a könyvtárban
     pub actual_index: usize,               // a kép indexe a listában
     pub magnify: f32,
+    pub change_magnify: f32,
+    pub want_magnify: f32,
+    pub mouse_zoom: bool,
     pub resize: f32,
-    pub first_appear: u32,
     pub texture: Option<egui::TextureHandle>,
     pub original_image: Option<image::DynamicImage>,
+    pub resized_image: Option<image::DynamicImage>,
     pub rgba_image: Option<image::ImageBuffer<image::Rgba<u8>, Vec<u8>>>,
-    pub image_size: egui::Vec2, // beolvasott kép mérete pixelben
+    pub image_size: Pf32, // beolvasott, és átméretezett kép mérete pixelben
+    pub original_image_size: Pf32,  // beolvasott kép mérete pixelben
     pub center: bool,           // igaz, ha középe tesszük az ablakot, egyébként a bal felső sarokba
     pub show_info: bool,
-    pub display_size_netto: egui::Vec2, // a képernyő méretből levonva az ablak keret
-    pub frame: egui::Vec2,              // ablak keret
-    pub aktualis_offset: egui::Vec2,    // megjelenítés kezdőpozíció a nagyított képen
+    pub display_size_netto: Pf32, // a képernyő méretből levonva az ablak keret
+    pub aktualis_offset: Pf32,    // megjelenítés kezdőpozíció a nagyított képen
     pub sort: SortDir,
     pub save_dialog: Option<SaveSettings>,
     pub color_settings: ColorSettings,
@@ -115,7 +120,7 @@ struct ImageViewer {
     pub config: AppSettings,
     pub resolution: Option<Resolution>,
     pub recent_file_modified: bool,
-    pub recent_window_size: egui::Vec2,
+    pub recent_window_size: Pf32,
     pub show_recent_window: bool,
     pub show_exif_details: bool,
     pub is_animated: bool,    // Ez a fájl animálható-e?
@@ -147,17 +152,20 @@ impl Default for ImageViewer {
             list_of_images: Vec::new(),
             actual_index: 0,
             magnify: 1.0,
+            change_magnify: 0.0,
+            want_magnify: 0.0,
+            mouse_zoom: false,
             resize: 1.0,
-            first_appear: 1,
             texture: None,
             original_image: None,
+            resized_image: None,
             rgba_image: None,
-            image_size: [800.0, 600.0].into(),
+            image_size: Pf32{x:800.0, y:600.0},
+            original_image_size: Pf32{x:800.0, y:600.0},
             center: false,
             show_info: false,
-            display_size_netto: (0.0, 0.0).into(),
-            frame: (0.0, 0.0).into(),
-            aktualis_offset: (0.0, 0.0).into(),
+            display_size_netto: Pf32{x:0.0, y:0.0},
+            aktualis_offset: Pf32{x:0.0, y:0.0},
             sort: SortDir::Name,
             save_dialog: None,
             color_settings: ColorSettings::default(),
@@ -211,38 +219,46 @@ pub enum Menu {
 
 
 pub struct MenuVariables {
-    pub menu_activity: Vec<(Menu,bool)>,
     pub recentfile: PathBuf,
     pub recentidx_last: usize,
     pub recentidx_curr: usize,
     pub recentidx_parm: usize,
-    pub closing_request_time: f64,
-    pub closing_request: bool,
+    pub closing_menu_request_time: f64,
+    pub closing_menu_request: bool,
+    pub hide_menu_request_time: f64,
+    pub hide_menu_request: bool,
+    pub hided: bool,
+    pub main_menu_active: bool,
+    pub other_menu_active: bool,
     pub last_menu : Menu,
     pub current_menu : Menu,
-    pub menu_pos:           egui::Pos2,
-    pub file_menu_pos:      egui::Pos2,
-    pub options_menu_pos:   egui::Pos2,
-    pub recents_menu_pos:   egui::Pos2,
-    pub recentfile_menu_pos: egui::Pos2,
-    pub sort_menu_pos:      egui::Pos2,
-    pub position_menu_pos:  egui::Pos2,
-    pub rotate_menu_pos:    egui::Pos2,
-    pub channels_menu_pos:  egui::Pos2,
-    pub background_menu_pos: egui::Pos2,
-    pub zoom_menu_pos:      egui::Pos2,
+    pub menu_pos:           Pf32,
+    pub file_menu_pos:      Pf32,
+    pub options_menu_pos:   Pf32,
+    pub recents_menu_pos:   Pf32,
+    pub recentfile_menu_pos: Pf32,
+    pub sort_menu_pos:      Pf32,
+    pub position_menu_pos:  Pf32,
+    pub rotate_menu_pos:    Pf32,
+    pub channels_menu_pos:  Pf32,
+    pub background_menu_pos: Pf32,
+    pub zoom_menu_pos:      Pf32,
 }
 
 impl Default for MenuVariables {
     fn default() -> Self {
         Self {
-            menu_activity: Vec::new(),
             recentfile: PathBuf::default(),
             recentidx_last: 1000,
             recentidx_curr: 1000,
             recentidx_parm: 1000,
-            closing_request_time: 0.0,
-            closing_request: false,
+            closing_menu_request_time: 0.0,
+            closing_menu_request: false,
+            hide_menu_request_time: 0.0,
+            hide_menu_request: false,
+            hided: false,
+            main_menu_active: false,
+            other_menu_active: false,
             last_menu: Menu::None,
             current_menu : Menu::None,
             menu_pos:           (0.0,0.0).into(),
@@ -268,12 +284,12 @@ impl eframe::App for ImageViewer {
         
         self.anim_and_gpu(ctx, frame);
         
-        let mut change_magnify = 0.0;
-        let mut mouse_zoom = false;
+        self.change_magnify = 0.0;
+        self.mouse_zoom = false;
         
-        self.handle_shortcuts(ctx, &mut change_magnify, &mut mouse_zoom);
+        self.handle_shortcuts(ctx);
         
-        self.draw_main_menu(ctx, &mut change_magnify, &mut mouse_zoom);
+        self.draw_main_menu(ctx);
         
         let dropped_file = ctx.input_mut(|i| {
             if !i.raw.dropped_files.is_empty() {
@@ -288,7 +304,7 @@ impl eframe::App for ImageViewer {
             //println!("Fájl behúzva: {:?}", path);
         }
         
-        self.draw_image_area(ctx, &mut change_magnify, &mut mouse_zoom);
+        self.draw_image_area(ctx);
         
         self.dialogs(ctx);
         

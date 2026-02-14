@@ -4,6 +4,7 @@ use crate::image_processing::*;
 use crate::ImageViewer;
 use crate::Menu;
 use crate::MenuVariables;
+use crate::pf32::Pf32;
 
 pub fn separator(ui: &mut egui::Ui) {
     let rect = ui.available_rect_before_wrap();
@@ -15,10 +16,10 @@ pub fn separator(ui: &mut egui::Ui) {
     ui.advance_cursor_after_rect(line_rect);
 }
 
-pub fn pos(ui: &mut egui::Ui, pos1:egui::Pos2, pos2:egui::Pos2 ) -> egui::Pos2 {
+pub fn pos(ui: &mut egui::Ui, pos1:Pf32, pos2:Pf32 ) -> Pf32 {
     let mut pos = pos1;
     pos.x = ui.max_rect().right();
-    pos + pos2.to_vec2()
+    pos + pos2
 }
 
 impl MenuVariables {
@@ -28,19 +29,19 @@ impl MenuVariables {
     //    else { format!("{:?}",menu) }
     //}
 
-    fn pos(&self, menu: Menu) -> egui::Pos2 {
+    fn pos(&self, menu: Menu) -> Pf32 {
         match menu {
             Menu::None          => self.menu_pos,
-            Menu::File          => self.file_menu_pos       + self.menu_pos.to_vec2(),
-            Menu::Options       => self.options_menu_pos    + self.menu_pos.to_vec2(),
-            Menu::Recents       => self.recents_menu_pos    + self.menu_pos.to_vec2(),
-            Menu::RecentFile    => self.recentfile_menu_pos + self.menu_pos.to_vec2(),
-            Menu::Sort          => self.sort_menu_pos       + self.menu_pos.to_vec2(),
-            Menu::Position      => self.position_menu_pos   + self.menu_pos.to_vec2(),
-            Menu::Rotate        => self.rotate_menu_pos     + self.menu_pos.to_vec2(),
-            Menu::Channels      => self.channels_menu_pos   + self.menu_pos.to_vec2(),
-            Menu::Backgrounds   => self.background_menu_pos + self.menu_pos.to_vec2(),
-            Menu::Zoom          => self.zoom_menu_pos       + self.menu_pos.to_vec2(),
+            Menu::File          => self.file_menu_pos       + self.menu_pos,
+            Menu::Options       => self.options_menu_pos    + self.menu_pos,
+            Menu::Recents       => self.recents_menu_pos    + self.menu_pos,
+            Menu::RecentFile    => self.recentfile_menu_pos + self.menu_pos,
+            Menu::Sort          => self.sort_menu_pos       + self.menu_pos,
+            Menu::Position      => self.position_menu_pos   + self.menu_pos,
+            Menu::Rotate        => self.rotate_menu_pos     + self.menu_pos,
+            Menu::Channels      => self.channels_menu_pos   + self.menu_pos,
+            Menu::Backgrounds   => self.background_menu_pos + self.menu_pos,
+            Menu::Zoom          => self.zoom_menu_pos       + self.menu_pos,
         }
     }
 
@@ -93,11 +94,11 @@ impl MenuVariables {
         //let curr = self.current_menu;
         //let new = menu;
         let time = ctx.input(|i| i.time);
-        if self.closing_request && time - self.closing_request_time > 0.18 {
+        if menu != Menu::None && self.closing_menu_request && time - self.closing_menu_request_time > 0.18 {
             menu = Menu::None;
         }
-        self.closing_request = false;
-        self.closing_request_time = time;
+        self.closing_menu_request = false;
+        self.closing_menu_request_time = time;
 
         if menu != Menu::None && (self.depth(menu) != self.depth(self.current_menu) || !self.menu_eq(menu,true)) { // OK
             self.last_menu = self.current_menu;
@@ -112,53 +113,115 @@ impl MenuVariables {
             self.recentidx_last = self.recentidx_curr;
             self.recentidx_curr = 1000;
             self.current_menu = Menu::None;
-            ctx.send_viewport_cmd_to(
-                egui::ViewportId::ROOT, 
-                egui::ViewportCommand::Focus
-            );
-            //println!("{} {} drop", self.str_menu(curr), self.str_menu(new));
+            ctx.send_viewport_cmd_to( egui::ViewportId::ROOT, egui::ViewportCommand::Focus );
+            //println!("{} {} Drop", self.str_menu(curr), self.str_menu(new));
             false
         }
     }
 
     pub fn menu_is_opened(&mut self, ctx: &egui::Context, build_menu: Menu ) -> bool {
-        if build_menu == Menu::None { self.after_menus(ctx); } // better late than never
-        if self.closing_request && ctx.input(|i| i.time) - self.closing_request_time > 0.18 {
-            self.current_menu = Menu::None;
-            self.recentidx_curr = 1000;
-            self.closing_request = false;
-            //println!("drop");
-            ctx.send_viewport_cmd_to(
-                egui::ViewportId::ROOT, 
-                egui::ViewportCommand::Focus
-            );
+        
+        if build_menu == Menu::None {
+            self.menu_pos = ctx.input(|i| {
+                let main_window_rect = i.viewport().outer_rect.unwrap_or(egui::Rect::EVERYTHING);
+                Pf32{x:8.0, y:32.0} + main_window_rect.min.into()
+            });
+
+            egui::TopBottomPanel::top("menu_placeholder").show(ctx, |ui| {
+                ui.set_height(20.0);
+            });
+            
         }
+        
+        if self.hided { return false; }
         if self.menu_eq(build_menu,true) {
             return true;
         }
         if build_menu == Menu::RecentFile && self.current_menu == build_menu { return true; }
         return self.is_in_root(build_menu); 
     }
-
-    pub fn after_menus(&mut self, ctx: &egui::Context) {
-        if self.menu_activity.len() > 0 {
-            if self.menu_activity.len() == 1 {
-            }
-            else {
-                let mut act = false;
-                for (menu,focus) in &self.menu_activity {
-                    if *menu == Menu:: None { continue; }
-                    if *focus { act = true; }
+    
+    pub fn before(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, build_menu: Menu) {
+        if build_menu == Menu::None {
+            if ui.input(|i| i.viewport().focused.unwrap_or(false)) {
+                if ctx.input(|i| i.viewport().focused != Some(true)) &&
+                    !self.closing_menu_request && self.current_menu == Menu::None {
+                    self.change_menu(ctx,Menu::None);
+                    //ctx.send_viewport_cmd_to( egui::ViewportId::ROOT, egui::ViewportCommand::Focus );
                 }
-                if !act {
-                    self.closing_request = true;
-                    self.closing_request_time = ctx.input(|i| i.time);
+                else {
+                    self.main_menu_active = true;
                 }
             }
-            self.menu_activity.clear();
+        }
+        else {
+            if ui.input(|i| i.viewport().focused.unwrap_or(false)) {
+                self.other_menu_active = true;
+            }
         }
     }
 
+    pub fn after(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
+        let desired_size = ui.min_size() + egui::Vec2{x:4.0,y:4.0};
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
+    }
+
+    pub fn after_all_menus(&mut self, ctx: &egui::Context) {
+        let main_window_act = ctx.input(|i| i.viewport().focused == Some(true));
+        //println!("{} {} {} {}",  main_window_act,  self.main_menu_active,  self.other_menu_active,  self.hided);
+
+        if self.hide_menu_request && (
+            main_window_act || self.main_menu_active || self.other_menu_active) {
+            self.hide_menu_request = false;
+            //println!("stop timing");
+        }
+        if self.hided && main_window_act {
+            //println!("show menu");
+            self.hided = false;
+            //ctx.request_repaint(); 
+            self.main_menu_active = false;
+            self.other_menu_active = false;
+            self.change_menu(ctx,Menu::None);
+            //self.change_menu(ctx,Menu::None);
+            //self.closing_menu_request = true;
+            //self.closing_menu_request_time = ctx.input(|i| i.time);
+            //ctx.send_viewport_cmd_to( egui::ViewportId::ROOT, egui::ViewportCommand::Focus );
+            return;
+        }
+        if !self.other_menu_active && !self.main_menu_active && !main_window_act && !self.closing_menu_request {
+            //println!("start menu timing");
+            self.closing_menu_request = true;
+            self.closing_menu_request_time = ctx.input(|i| i.time);
+        }
+        if self.closing_menu_request && (self.other_menu_active || self.main_menu_active || main_window_act) {
+            //println!("stop menu timing");
+            self.closing_menu_request = false;
+        }
+        
+        if main_window_act && self.other_menu_active && self.current_menu != Menu::None {
+            //println!("to none");
+            self.change_menu(ctx, Menu::None);
+        }
+        else if !self.other_menu_active && !self.main_menu_active && self.current_menu != Menu::None {
+            //println!("to none 2");
+            self.change_menu(ctx, Menu::None);
+        }
+        if !main_window_act && !self.main_menu_active&& !self.other_menu_active && !self.hided {
+            if !self.hide_menu_request {
+                self.hide_menu_request_time = ctx.input(|i| i.time);
+                self.hide_menu_request = true;
+                //println!("start timing");
+            } else if ctx.input(|i| i.time) - self.hide_menu_request_time > 0.18 {
+                //println!("hide menu");
+                self.hided = true;
+                self.hide_menu_request = false;
+            }
+            //ctx.request_repaint(); 
+        }
+        self.main_menu_active = false;
+        self.other_menu_active = false;
+    }
+    
 }
 
 macro_rules! show_menu {
@@ -167,68 +230,51 @@ macro_rules! show_menu {
             let pos = $menvar.pos( $build_menu );
             let id = egui::ViewportId::from_hash_of(stringify!($build_menu));
             let (w,h) = if $build_menu == Menu::None { (400.0, 40.0) } else { (400.0, 456.0) };
-            $ctx.show_viewport_immediate(
-                id,
-                egui::ViewportBuilder::default()
-                    .with_position(pos)
-                    .with_always_on_top()
-                    .with_decorations(false)
-                    .with_inner_size([w, h]),
-                |ctx, _| {
-                    egui::CentralPanel::default()
-                    .frame(egui::Frame::default().fill(ctx.style().visuals.window_fill()).inner_margin(2.0))
-                    .show( ctx, |$ui|
-                    {
-                        $menvar.menu_activity.push( ($build_menu, $ui.input(|i| i.viewport().focused.unwrap_or(true) ) ) );
-                        
-                        if $build_menu == Menu::None {
-                            $ui.horizontal(|$ui| {
-                                $content
-                                let desired_size = $ui.min_size() + egui::Vec2{x:4.0,y:4.0};
-                                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
-                            });
-                        }
-                        else {
-                            $ui.vertical(|$ui| {
-                                $content
-                                let desired_size = $ui.min_size() + egui::Vec2{x:4.0,y:4.0};
-                                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(desired_size));
-                            });
-                        }
-                    });
-                }
-            );
+            let builder = egui::ViewportBuilder::default()
+                .with_position(pos)
+                .with_decorations(false)
+                .with_always_on_top()
+                .with_inner_size([w, h]);
+            $ctx.show_viewport_immediate( id, builder, |ctx, _| {
+                egui::CentralPanel::default()
+                .frame(egui::Frame::default().fill(ctx.style().visuals.window_fill()).inner_margin(2.0))
+                .show( ctx, |$ui| {
+                    $menvar.before($ctx, $ui,$build_menu);
+                    if $build_menu == Menu::None {
+                        $ui.horizontal(|$ui| {
+                            $content
+                            $menvar.after($ctx, $ui);
+                        });
+                    }
+                    else {
+                        $ui.vertical(|$ui| {
+                            $content
+                            $menvar.after($ctx, $ui);
+                        });
+                    }
+                });
+            });
         }
     };
-    
 }
 
 
 impl ImageViewer {
 
-    pub fn draw_main_menu(&mut self, ctx: &egui::Context, _change_magnify: &mut f32, _mouse_zoom: &mut bool) {
+    pub fn draw_main_menu(&mut self, ctx: &egui::Context) {
         // Menüsor kialakítása
-
-        self.menvar.menu_pos = ctx.input(|i| {
-            let main_window_rect = i.viewport().outer_rect.unwrap_or(egui::Rect::EVERYTHING);
-            main_window_rect.min + egui::vec2(8.0, 32.0)
-        });
-
-        egui::TopBottomPanel::top("menu_placeholder").show(ctx, |ui| {
-            ui.set_height(20.0); // Pontosan akkora, mint a menü lesz
-        });
 
         // Főmenü
         show_menu!(self.menvar, ctx, Menu::None, ui, {
             let file_btn = ui.button("File");
             if file_btn.clicked() {
-                self.menvar.file_menu_pos = file_btn.rect.left_bottom();
+                self.menvar.file_menu_pos = file_btn.rect.left_bottom().into();
                 self.menvar.change_menu(ctx,Menu::File) ;
             }
 
             let options_btn = ui.button("Options");
             if options_btn.clicked() {
-                self.menvar.options_menu_pos = options_btn.rect.left_bottom();
+                self.menvar.options_menu_pos = options_btn.rect.left_bottom().into();
                 self.menvar.change_menu(ctx,Menu::Options);
             }
 
@@ -357,7 +403,7 @@ impl ImageViewer {
             
             let recents_btn = ui.button("Recent Paths ...");
             if recents_btn.clicked() {
-                self.menvar.recents_menu_pos = pos( ui, recents_btn.rect.right_top(), self.menvar.file_menu_pos);
+                self.menvar.recents_menu_pos = pos( ui, recents_btn.rect.right_top().into(), self.menvar.file_menu_pos);
                 self.menvar.change_menu(ctx,Menu::Recents);
             }
 
@@ -443,7 +489,7 @@ impl ImageViewer {
                 button.clone().on_hover_text(&folder_path);
                 if button.clicked() {
                     self.menvar.recentfile = path.clone().into();
-                    self.menvar.recentfile_menu_pos = pos( ui, button.rect.right_top(), self.menvar.recents_menu_pos);
+                    self.menvar.recentfile_menu_pos = pos( ui, button.rect.right_top().into(), self.menvar.recents_menu_pos);
                     self.menvar.recentidx_parm = i;
                     self.menvar.change_menu(ctx,Menu::RecentFile);
                 }
@@ -480,32 +526,32 @@ impl ImageViewer {
         show_menu!(self.menvar, ctx, Menu::Options, ui, {
             let sort_btn = ui.button("Order of images");
             if sort_btn.clicked() {
-                self.menvar.sort_menu_pos = pos( ui, sort_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.sort_menu_pos = pos( ui, sort_btn.rect.right_top().into(), self.menvar.options_menu_pos);
                 self.menvar.change_menu(ctx,Menu::Sort);
             }
             let position_btn = ui.button("Window position");
             if position_btn.clicked() {
-                self.menvar.position_menu_pos = pos( ui, position_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.position_menu_pos = pos( ui, position_btn.rect.right_top().into(), self.menvar.options_menu_pos);
                 self.menvar.change_menu(ctx,Menu::Position);
             }
             let rotate_btn = ui.button("Rotate");
             if rotate_btn.clicked() {
-                self.menvar.rotate_menu_pos = pos( ui, rotate_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.rotate_menu_pos = pos( ui, rotate_btn.rect.right_top().into(), self.menvar.options_menu_pos);
                 self.menvar.change_menu(ctx,Menu::Rotate);
             }
             let background_btn = ui.button("Background");
             if background_btn.clicked() {
-                self.menvar.background_menu_pos = pos( ui, background_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.background_menu_pos = pos( ui, background_btn.rect.right_top().into(), self.menvar.options_menu_pos);
                 self.menvar.change_menu(ctx,Menu::Backgrounds);
             }
             let channels_btn = ui.button("Channels");
             if channels_btn.clicked() {
-                self.menvar.channels_menu_pos = pos( ui, channels_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.channels_menu_pos = pos( ui, channels_btn.rect.right_top().into(), self.menvar.options_menu_pos);
                 self.menvar.change_menu(ctx,Menu::Channels);
             }
             let zoom_btn = ui.button("Zoom");
             if zoom_btn.clicked() {
-                self.menvar.zoom_menu_pos = pos( ui, zoom_btn.rect.right_top(), self.menvar.options_menu_pos);
+                self.menvar.zoom_menu_pos = pos( ui, zoom_btn.rect.right_top().into(), self.menvar.options_menu_pos);
                 self.menvar.change_menu(ctx,Menu::Zoom);
             }
             let col_button = egui::Button::new("Color correction").shortcut_text(ctx.format_shortcut(
@@ -686,6 +732,10 @@ impl ImageViewer {
             }
             if need != -2.0 {
                 self.menvar.change_menu(ctx,Menu::None);
+                if self.magnify != need {
+                    self.want_magnify = need;
+                    self.review(ctx, true, false);
+                }
             }
         });
 
@@ -834,7 +884,7 @@ impl ImageViewer {
             }
         });
         
-        self.menvar.after_menus(ctx);
+        self.menvar.after_all_menus(ctx);
     }
 
 }

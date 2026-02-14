@@ -1,101 +1,88 @@
 use crate::image_processing::*;
 use crate::ui_elements::*;
 use crate::ImageViewer;
+use crate::pf32::*;
 
 
 impl ImageViewer {
 
-    pub fn draw_image_area(&mut self, ctx: &egui::Context, change_magnify: &mut f32, mouse_zoom: &mut bool){
+    pub fn show_title(&self, ctx: &egui::Context, txt: Option<String>) {
+        let mut title = format!("iViewer - {}. {}{}   {}",
+            self.actual_index, self.image_name, if self.modified {'*'} else {' '},  self.magnify).into();
+        if self.anim_data.is_some() {
+            title = format!("{} Frame: {} / {}",title, self.current_frame + 1, self.total_frames).into();
+        }
+        if let Some(text) = txt {
+            title = format!("{} {}",title, text).into();
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+    }
+
+    pub fn draw_image_area(&mut self, ctx: &egui::Context){
         
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.inner_margin(0.0)) // Margók eltüntetése
             .show(ctx, |ui| {
-                let mut in_w;
-                let mut in_h;
-                let old_size = self.image_size * self.magnify;
-                if self.first_appear > 0 {
-                    if self.first_appear == 1 {
-                        let outer_size = ctx.input(|i| i.viewport().outer_rect.unwrap().size());
-                        let inner_size = ctx.input(|i| i.viewport_rect().size());
-                        self.frame = outer_size - inner_size;
-                        self.frame.y += 30.0;
-                        self.display_size_netto =
-                            ctx.input(|i| i.viewport().monitor_size.unwrap()) - self.frame;
-                        //println!("out:{:?} in:{:?} frame:{:?} netto:{:?}", outer_size,inner_size,self.frame,self.display_size_netto);
-                    }
-                    let ratio = (self.display_size_netto) / self.image_size;
+                
+                let old_magnify = self.magnify;
+                let old_size = self.image_size * old_magnify;
+                //let old_size:Pf32 = ui_rect.max.into() - ui_rect.min.into();
+                //self.aktualis_offset = output.state.offset.into();
+                //let old_offset = self.aktualis_offset;
+                
+                let display_size: Pf32 = ctx.input(|i| i.viewport().monitor_size.unwrap()).into();
+                let window_outer_frame = Pf32::pf32(16.0,50.0);
+                let window_inner_frame = Pf32::pf32(6.0,30.0);
+                let display_size_netto = (display_size - window_outer_frame - window_inner_frame).floor();
+                let mut bigger = 1.0;
+                
+                if self.want_magnify == -1.0 { // set size to fit
+                    let ratio = display_size_netto / self.image_size; // divide by tags
                     self.magnify = ratio.x.min(ratio.y);
 
-                    if let Some(_) = &self.texture {
-                    } else {
-                        self.magnify /= 2.0;
+                    if !self.rgba_image.is_some() {
+                        self.magnify *= 0.5; // empty window
                     }
-
-                    let round_ = if self.magnify < 1.0 { 0.0 } else { 0.5 };
-                    self.magnify = (((self.magnify * 20.0 + round_) as i32) as f32) / 20.0; // round
-                    in_w = (self.image_size.x * self.magnify).min(self.display_size_netto.x);
-                    in_h = (self.image_size.y * self.magnify).min(self.display_size_netto.y);
-                    let inner_size = egui::Vec2 {
-                        x: in_w + 4.0,
-                        y: in_h + 26.0,
-                    };
-                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(inner_size));
-                    if self.first_appear > 0 {
-                        let pos = if self.center {
-                            egui::pos2(
-                                (self.display_size_netto.x - in_w) / 2.0 - 8.0,
-                                (self.display_size_netto.y - in_h) / 2.0 - 10.0,
-                            )
-                        } else {
-                            egui::pos2(-8.0, 0.0)
-                        };
-                        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
-                        //println!("inner:{:?} pos:{:?} magn: {:?}", inner_size, pos, self.magnify);
-                    }
+                    //let round_ = if self.magnify < 1.0 { 0.0 } else { 0.5 };
+                    self.magnify = (((self.magnify * 20.0 ) as i32) as f32) / 20.0;
                 }
 
-                let mut zoom = 1.0;
-                if *change_magnify != 0.0 {
-                    let regi_nagyitas = self.magnify;
-                    if self.magnify >= 1.0 {
-                        *change_magnify *= 2.0;
+                if self.change_magnify != 0.0 || self.want_magnify > 0.009 {
+                    if self.want_magnify > 0.009 { // from menu
+                        self.magnify = self.want_magnify;
                     }
-                    if self.magnify >= 4.0 {
-                        *change_magnify *= 2.0;
+                    else {
+                        if self.magnify >= 1.0 {
+                            self.change_magnify *= 2.0;
+                        }
+                        else if self.magnify >= 4.0 {
+                            self.change_magnify *= 2.0;
+                        }
+                        self.magnify = (old_magnify * 1.0 + (0.05 * self.change_magnify)).clamp(0.1, 10.0);
+                        self.magnify = (((self.magnify * 100.0 + 0.5) as i32) as f32) / 100.0; // round
                     }
-                    self.magnify = (regi_nagyitas * 1.0 + (0.05 * *change_magnify)).clamp(0.1, 10.0);
-                    self.magnify = (((self.magnify * 100.0 + 0.5) as i32) as f32) / 100.0; // round
-
-                    if self.magnify != regi_nagyitas {
-                        zoom = self.magnify / regi_nagyitas;
-                        in_w = (self.image_size.x * self.magnify).min(self.display_size_netto.x);
-                        in_h = (self.image_size.y * self.magnify).min(self.display_size_netto.y);
-                        let inner_size = egui::Vec2 {
-                            x: in_w + 4.0,
-                            y: in_h + 26.0,
-                        };
-                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(inner_size));
-                        let pos = if self.center {
-                            egui::pos2(
-                                (self.display_size_netto.x - in_w) / 2.0,
-                                (self.display_size_netto.y - in_h) / 2.0,
-                            )
-                        } else {
-                            egui::pos2(0.0, 0.0)
-                        };
-                        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
-                        //println!("inner:{:?} pos:{:?} magn: {:?}", inner_size, pos, self.magnify);
-                    }
+                    bigger = self.magnify / old_magnify;
                 }
+                
+                let zero = Pf32 { x: 0.0, y: 0.0 };
+                //let one = Pf32 { x: 1.0, y: 1.0 };
+                let mut off = Pf32 { x: 0.0, y: 0.0 };
+                let new_size = (self.image_size * self.magnify).floor();
+                let inner_size = new_size.min(display_size_netto)+window_inner_frame;
+                let pos = (if self.center { (display_size_netto - inner_size) * 0.5 } else { zero }).floor();
+
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(inner_size.into()));
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
 
                 if let Some(tex) = self.texture.as_ref() { // CPU
+                
+                
+                
                     let magnify = self.magnify;
                     let image_size = self.image_size;
                     let display_size_netto = self.display_size_netto;
                     let current_offset = self.aktualis_offset;
-                    let star = if self.modified { "*" } else { " " };
-                    let title = format!( "IView - {}. {}{}  {}", self.actual_index, self.image_name, star, self.magnify );
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+                    self.show_title(ctx,None);
                     
                     let output = egui::Frame::canvas(ui.style())
                         .fill(egui::Color32::TRANSPARENT)
@@ -105,50 +92,47 @@ impl ImageViewer {
 
                             let new_size = image_size * magnify;
                             let scroll_id = ui.make_persistent_id("kep_scroll");
-                            let mut off = egui::Vec2 { x: 0.0, y: 0.0 };
+                            //let mut off = Pf32 { x: 0.0, y: 0.0 };
 
-                            if zoom != 1.0 || self.first_appear > 0 {
+                            //if zoom != 1.0 || self.first_appear > 0 {
 
                                 let ui_rect = ui.max_rect();
-                                let inside = ui_rect.max - ui_rect.min;
 
-                                let mut pointer = if *mouse_zoom {
-                                    // mouse position
+                                let mut pointer:Pf32 = if self.mouse_zoom {
                                     if let Some(p) = ctx.pointer_latest_pos() {
-                                        p - ui_rect.min
+                                        let pp:Pf32 = p.into();
+                                        pp - ui_rect.min.into()
                                     } else {
-                                        inside / 2.0
+                                        old_size * 0.5
                                     }
                                 } else {
-                                    inside / 2.0
-                                }; // image center
+                                    old_size * 0.5
+                                };
                                 pointer.x = pointer.x.clamp(0.0, old_size.x);
                                 pointer.y = pointer.y.clamp(0.0, old_size.y);
 
                                 let mut offset = current_offset;
                                 offset += pointer;
-                                offset *= zoom;
+                                offset *= bigger;
                                 offset -= pointer;
 
                                 if new_size.x > display_size_netto.x {
-                                    // need horizontal scrollbar
-                                    off.x = offset.x;
+                                    off.x = offset.x; // need horizontal scrollbar
                                 }
                                 if new_size.y > display_size_netto.y {
-                                    // need vertical scrollbar
-                                    off.y = offset.y;
+                                    off.y = offset.y; // need vertical scrollbar
                                 }
-                                if self.first_appear > 0 {
+                                //if self.want_magnify > 0 {
                                     //println!("p:{:?} c_of:{:?} o_of:{:?} o_si:{:?} n_si{:?} in:{:?} mag:{}",
                                     //    pointer, current_offset, off, old_size, new_size, inside, self.magnify);
                                     //println!();
-                                }
-                            }
+                                //}
+                            //}
                             let mut scroll_area = egui::ScrollArea::both()
                                 .id_salt(scroll_id)
                                 .auto_shrink([false; 2]);
 
-                            if zoom != 1.0 {
+                            if bigger != 1.0 {
                                 scroll_area = scroll_area
                                     .vertical_scroll_offset(off.y)
                                     .horizontal_scroll_offset(off.x);
@@ -156,12 +140,12 @@ impl ImageViewer {
 
 
                             let scroll_output  = scroll_area.show(ui, |ui2| {
-                                ui2.add(egui::Image::from_texture(tex).fit_to_exact_size(new_size));
+                                ui2.add(egui::Image::from_texture(tex).fit_to_exact_size(new_size.into()));
                             });
                             scroll_output
                         }).inner;
                         
-                    self.aktualis_offset = output.state.offset;
+                    self.aktualis_offset = output.state.offset.into();
 
                     let keys_active = !self.color_correction_dialog && ctx.input(|i| i.modifiers.shift && i.modifiers.alt);
                     
@@ -193,7 +177,12 @@ impl ImageViewer {
                                                 ui.label(format!("Pos: {}, {} ", pixel_x, pixel_y));
                                                 let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                                                 ui.painter().rect_filled(rect, 2.0, color);
-                                                ui.label(format!("Rgb: {}, {}, {}", color.r(), color.g(), color.b()));
+                                                if color.a() != 255 {
+                                                    ui.label(format!("Rgba: {}, {}, {}, {}", color.r(), color.g(), color.b(), color.a()));
+                                                }
+                                                else {
+                                                    ui.label(format!("Rgb: {}, {}, {}", color.r(), color.g(), color.b()));
+                                                }
                                             });
                                         }
                                     );
@@ -224,7 +213,9 @@ impl ImageViewer {
                         }
                     });
                 }
-                self.first_appear = 0;
+                self.aktualis_offset = off;
+                self.want_magnify = 0.0;
+                self.change_magnify = 0.0;
             });
     }
 

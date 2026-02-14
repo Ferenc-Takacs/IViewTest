@@ -178,12 +178,7 @@ pub fn draw_custom_background(ui: &mut egui::Ui, bg_style: &BackgroundStyle) {
 impl ImageViewer {
 
     pub fn review(&mut self, ctx: &egui::Context, coloring: bool, new_rotate: bool) {
-        if let Some(mut img) = self.original_image.clone() {
-            self.review_core(ctx, &mut img, coloring, new_rotate)
-        }
-    }
-    
-    fn review_core(&mut self, ctx: &egui::Context, img: & mut image::DynamicImage, coloring: bool, new_rotate: bool) {
+        
         let default_settings = ColorSettings::default();
         if coloring {
             if let Some(_interface) = &self.gpu_interface {
@@ -196,16 +191,31 @@ impl ImageViewer {
             self.lut = None;
             self.color_settings = default_settings.clone();
         }
-
-        let max_gpu_size = ctx.input(|i| i.max_texture_side) as u32;
-        let w_orig = img.width();
-        if img.width() > max_gpu_size || img.height() > max_gpu_size {
-            *img = img.resize(
-                max_gpu_size,
-                max_gpu_size,
-                image::imageops::FilterType::Triangle,
-            );
+        
+        let img : & mut image::DynamicImage = &mut Default::default();
+        if let Some(resized_image) = self.resized_image.clone() {
+            *img = resized_image;
         }
+        else {
+            if let Some(image) = self.original_image.clone() {
+                let w_orig = image.width();
+                let h_orig = image.height();
+                self.original_image_size = (w_orig,h_orig).into();
+                let max_gpu_size = ctx.input(|i| i.max_texture_side) as u32;
+                if w_orig > max_gpu_size || h_orig > max_gpu_size {
+                    let magn = (w_orig as f64 / max_gpu_size as f64 ).max(h_orig as f64 / max_gpu_size as f64 ).ceil();
+                    *img = image.thumbnail((w_orig as f64/magn) as u32, (h_orig as f64/magn) as u32);
+                    //*img = image.resize( max_gpu_size, max_gpu_size, image::imageops::FilterType::Triangle, );
+                    self.resize =  w_orig as f32 / img.width() as f32;
+                    self.resized_image = Some(img.clone());
+                }
+                else {
+                    self.resize = 1.0;
+                    *img = image;
+                }
+            }
+        }
+
         self.modified = !self.show_original_only &&
                 (self.color_settings.is_setted() || self.color_settings.is_blured());
         match self.color_settings.rotate {
@@ -215,7 +225,7 @@ impl ImageViewer {
             _ => {}
         }
         if new_rotate {
-            self.first_appear = 1;
+            self.want_magnify = -1.0;
         }
 
         let mut rgba_image = img.to_rgba8();
@@ -229,13 +239,12 @@ impl ImageViewer {
                 self.image_size.y);
         }
 
-        self.resize = self.image_size.x / w_orig as f32;
-        
         if self.color_settings.is_setted() || self.color_settings.is_blured() {
             if self.gpu_interface.is_some() {
                 let (width, height) = rgba_image.dimensions();
                 self.gpu_interface.as_ref().unwrap().generate_image(rgba_image.as_mut(), width, height);
-                            } else if let Some(lut) = &self.lut {
+            }
+            else if let Some(lut) = &self.lut {
                 lut.apply_lut(&mut rgba_image); 
             }
         }
@@ -254,7 +263,7 @@ impl ImageViewer {
         if let Some(rgba_image) = &self.rgba_image {
             if pixel_x < rgba_image.width() && pixel_y < rgba_image.height() {
                 let pixel = rgba_image.get_pixel(pixel_x, pixel_y);
-                return Some(egui::Color32::from_rgb(pixel[0], pixel[1], pixel[2]));
+                return Some(egui::Color32::from_rgba_unmultiplied(pixel[0], pixel[1], pixel[2], pixel[3]));
             }
         }
         None

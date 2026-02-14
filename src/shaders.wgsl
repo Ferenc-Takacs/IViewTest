@@ -153,6 +153,10 @@ struct FilterSettings {
     sharpen_amount: f32,   // 0.0 = kikapcsolva
     image_width: f32,
     image_height: f32,
+    transparent_color: [u8; 4],
+    transparency_tolerance: f32,
+    use_transparency: u32,
+    rough_transparency: u32,
 }
 
 // Bindingok az alkalmazáshoz
@@ -237,11 +241,44 @@ fn apply_effects(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     let lut_size = 33.0;
     let lut_coords = clamp(processed, vec3(0.0), vec3(1.0)) * ((lut_size - 1.0) / lut_size) + (0.5 / lut_size);
-    let corrected = textureSampleLevel(t_lut, s_linear, lut_coords, 0.0).rgb;
+    var corrected = textureSampleLevel(t_lut, s_linear, lut_coords, 0.0).rgb;
+    if( f.use_transparency ) {
+        color_to_alpha( corrected );
+    }
     textureStore(t_out, coords, vec4<f32>(corrected, 1.0));
 }
 
 fn get_gaussian_weight(dist: f32, sigma: f32) -> f32 {
     let s = 2.0 * sigma * sigma;
     return exp(-(dist * dist) / s);
+}
+
+fn color_to_alpha(pixel: & mut image::Rgba<u8> ) {
+    let max_dist = self.transparency_tolerance * 100.0;        
+    let dist = ((pixel[0] as f32 - f.transparent_color[0] as f32).powi(2) +
+                (pixel[1] as f32 - f.transparent_color[1] as f32).powi(2) +
+                (pixel[2] as f32 - f.transparent_color[2] as f32).powi(2)).sqrt();
+    if dist < 5.0*max_dist {
+        if self.transparency_tolerance < 0.001 {
+            pixel[3] = 0;
+        }
+        else {
+            var alpha = (dist*255.0 / max_dist) as u32; 
+            if f.rough_transparency {
+                if alpha < 128 {
+                    pixel[0] = f.transparent_color[0];
+                    pixel[1] = f.transparent_color[1];
+                    pixel[2] = f.transparent_color[2];
+                    pixel[3] = 0u8;
+                }
+                else {
+                    pixel[3] = 255u8;
+                }
+            }
+            else {
+                alpha = alpha.clamp(0, 255);
+                pixel[3] = alpha.clamp(0, 255) as u8;
+            }
+        }
+    }
 }
