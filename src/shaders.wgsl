@@ -153,10 +153,11 @@ struct FilterSettings {
     sharpen_amount: f32,   // 0.0 = kikapcsolva
     image_width: f32,
     image_height: f32,
-    transparent_color: [u8; 4],
     transparency_tolerance: f32,
     use_transparency: u32,
     rough_transparency: u32,
+    _pad: f32,
+    transparent_color: vec4<f32>,
 }
 
 // Bindingok az alkalmazáshoz
@@ -173,7 +174,8 @@ fn apply_effects(@builtin(global_invocation_id) id: vec3<u32>) {
     if (id.x >= dims_u32.x || id.y >= dims_u32.y) { return; }
     let coords = vec2<i32>(id.xy);
     let dims = vec2<i32>(dims_u32);
-    let center_color = textureLoad(t_src, coords, 0).rgb;
+    let original_pixel = textureLoad(t_src, coords, 0).rgba;
+    let center_color = original_pixel.rgb;
     var processed = center_color;
 	
     let r = i32(f.sharpen_radius*3.0+0.5) + 1;
@@ -241,11 +243,39 @@ fn apply_effects(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     let lut_size = 33.0;
     let lut_coords = clamp(processed, vec3(0.0), vec3(1.0)) * ((lut_size - 1.0) / lut_size) + (0.5 / lut_size);
-    var corrected = textureSampleLevel(t_lut, s_linear, lut_coords, 0.0).rgb;
-    if( f.use_transparency ) {
-        color_to_alpha( corrected );
+    var corrected_rgb = textureSampleLevel(t_lut, s_linear, lut_coords, 0.0).rgb;
+    var final_color = vec4<f32>(corrected_rgb, original_pixel.a);
+    if( f.use_transparency > 0u ) {
+        final_color = color_to_alpha( final_color );
     }
-    textureStore(t_out, coords, vec4<f32>(corrected, 1.0));
+    textureStore(t_out, coords, final_color);
+}
+
+fn color_to_alpha(pixel: vec4<f32> ) -> vec4<f32> {
+    var out = pixel;
+    let tolerance = f.transparency_tolerance;
+    let dist = distance(pixel.rgb, f.transparent_color.rgb);
+
+    if dist < tolerance {
+        if f.transparency_tolerance < 0.001 {
+            out.a = 0;
+        }
+        else {
+            var alpha = dist / tolerance; 
+            if f.rough_transparency > 0u {
+                if alpha < 0.5 {
+                    out = f.transparent_color;
+                }
+                else {
+                    out.a = step(0.5, out.a);
+                }
+            }
+            else {
+                out.a = clamp( out.a * alpha, 0.0, 1.0);
+            }
+        }
+    }
+    return out;
 }
 
 fn get_gaussian_weight(dist: f32, sigma: f32) -> f32 {
@@ -253,32 +283,3 @@ fn get_gaussian_weight(dist: f32, sigma: f32) -> f32 {
     return exp(-(dist * dist) / s);
 }
 
-fn color_to_alpha(pixel: & mut image::Rgba<u8> ) {
-    let max_dist = self.transparency_tolerance * 100.0;        
-    let dist = ((pixel[0] as f32 - f.transparent_color[0] as f32).powi(2) +
-                (pixel[1] as f32 - f.transparent_color[1] as f32).powi(2) +
-                (pixel[2] as f32 - f.transparent_color[2] as f32).powi(2)).sqrt();
-    if dist < 5.0*max_dist {
-        if self.transparency_tolerance < 0.001 {
-            pixel[3] = 0;
-        }
-        else {
-            var alpha = (dist*255.0 / max_dist) as u32; 
-            if f.rough_transparency {
-                if alpha < 128 {
-                    pixel[0] = f.transparent_color[0];
-                    pixel[1] = f.transparent_color[1];
-                    pixel[2] = f.transparent_color[2];
-                    pixel[3] = 0u8;
-                }
-                else {
-                    pixel[3] = 255u8;
-                }
-            }
-            else {
-                alpha = alpha.clamp(0, 255);
-                pixel[3] = alpha.clamp(0, 255) as u8;
-            }
-        }
-    }
-}

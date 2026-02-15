@@ -126,6 +126,7 @@ struct ImageViewer {
     pub is_animated: bool,    // Ez a fájl animálható-e?
     pub anim_playing: bool,   // Fut-e most az animáció?
     pub anim_loop: bool,      // Ismétlődjön-e (default: true)?
+    pub anim_autostart: bool,
     pub current_frame: usize, // Hol tartunk?
     pub total_frames: usize,
     pub last_frame_time: std::time::Instant,
@@ -188,6 +189,7 @@ impl Default for ImageViewer {
             is_animated: false,  // Ez a fájl animálható-e?
             anim_playing: false, // Fut-e most az animáció?
             anim_loop: true,     // Ismétlődjön-e (default: true)?
+            anim_autostart: true,
             current_frame: 0,    // Hol tartunk?
             total_frames: 0,
             last_frame_time: std::time::Instant::now(),

@@ -7,11 +7,13 @@ use webp::Encoder;
 use image::AnimationDecoder;
 use std::io::{Read, Seek};
 use img_parts::ImageEXIF;
+use rayon::iter::{IntoParallelRefIterator,ParallelIterator};
 
 use crate::exif_my::*;
 use crate::colors::*;
 use crate::image_processing::*;
 use crate::ImageViewer;
+use crate::gpu_colors;                             
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum SortDir {
@@ -38,6 +40,8 @@ pub struct SaveSettings {
     pub lossless: bool, // WebP
     pub can_include_exif: bool,
     pub include_exif: bool,
+    pub save_all_frames: bool,
+    pub is_animation: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -51,8 +55,9 @@ pub struct AppSettings {
     pub fit_open: bool,
     pub same_correction_open: bool,
     pub bg_style: BackgroundStyle,
-    pub recent_files: Vec<PathBuf>,
     pub use_gpu: bool,
+    pub anim_autostart: bool,
+    pub recent_files: Vec<PathBuf>,
 }
 
 impl Default for AppSettings {
@@ -67,8 +72,9 @@ impl Default for AppSettings {
             fit_open: true,
             same_correction_open: false,
             bg_style: BackgroundStyle::DarkBright,
-            recent_files: Vec::new(),
             use_gpu : true,
+            anim_autostart: true,
+            recent_files: Vec::new(),
         }
     }
 }
@@ -98,9 +104,47 @@ pub fn load_icon() -> egui::IconData {
     }
 }
 
+fn apply_modifies_to_frame(img: &mut image::DynamicImage, color_settings: &ColorSettings, magnify: f32, lut: &Option<Lut4ColorSettings>, gpu_interface: &Option<gpu_colors::GpuInterface> ) {
+    let new_width = (img.width() as f32 * magnify).round() as u32;
+    let new_height = (img.height() as f32 * magnify).round() as u32;
+    let mut processed_img = if (magnify - 1.0).abs() > 0.001 {
+        img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3)
+    } else {
+        img.clone()
+    };
+    match color_settings.rotate {
+        Rotate::Rotate90 => processed_img = processed_img.rotate90(),
+        Rotate::Rotate180 => processed_img = processed_img.rotate180(),
+        Rotate::Rotate270 => processed_img = processed_img.rotate270(),
+        _ => {}
+    }
+    let mut rgba_image = processed_img.to_rgba8();
+    if color_settings.is_setted() || color_settings.is_blured(){
+        if let Some(interface) = &gpu_interface {
+            let (w, h) = rgba_image.dimensions();
+            interface.change_colorcorrection( &color_settings, w as f32, h as f32);
+            interface.generate_image(rgba_image.as_mut(), w, h);
+        }
+        else {
+            if let Some(lut) = &lut {
+                lut.apply_lut(&mut rgba_image);
+            }
+        }
+    }
+    *img = image::DynamicImage::ImageRgba8(rgba_image);
+}
+
 impl ImageViewer {
+    pub fn add_to_recent(&mut self, path: &PathBuf) {
+        self.config.recent_files.retain(|p| p != path);
+        self.config.recent_files.insert(0, path.to_path_buf());
+        self.config.recent_files.truncate(20);
+        self.recent_file_modified = true;
+    }
+
 
     pub fn load_animation(&mut self, path: &PathBuf) {
+        self.anim_data = None;
         let Ok(file) = std::fs::File::open(path) else {
             return;
         };
@@ -131,35 +175,22 @@ impl ImageViewer {
                 let delay_ms = if den == 0 { 100 } else { (num / den).max(20) }; // Biztonsági minimum 10ms
                 delays.push(std::time::Duration::from_millis(delay_ms as u64));
 
-                // Konvertálás egui textúrává
                 let rgba = frame.into_buffer();
-                let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                    [rgba.width() as usize, rgba.height() as usize],
-                    &rgba.into_raw(),
-                );
-                let img = color_image_to_dynamic(color_image);
-                images.push(img);
-
+                images.push(image::DynamicImage::ImageRgba8(rgba));
             }
 
             if !images.is_empty() {
                 let total = images.len();
-                self.anim_data = Some(AnimatedImage {
-                    anim_frames: images,
-                    delays,
-                });
-                self.current_frame = 0;
-                self.total_frames = total;
-                self.last_frame_time = std::time::Instant::now();
+                if total > 1 {
+                    self.total_frames = total;
+                    self.anim_data = Some(AnimatedImage {
+                        anim_frames: images,
+                        delays,
+                    });
+                    self.last_frame_time = std::time::Instant::now();
+                }
             }
         }
-    }
-
-    pub fn add_to_recent(&mut self, path: &PathBuf) {
-        self.config.recent_files.retain(|p| p != path);
-        self.config.recent_files.insert(0, path.to_path_buf());
-        self.config.recent_files.truncate(20);
-        self.recent_file_modified = true;
     }
 
     pub fn save_settings(&mut self) {
@@ -171,6 +202,7 @@ impl ImageViewer {
         self.config.refit_reopen = self.refit_reopen;
         self.config.center = self.center;
         self.config.use_gpu = self.use_gpu;
+        self.config.anim_autostart = self.anim_autostart;
         self.config.fit_open = self.fit_open;
         self.config.same_correction_open = self.same_correction_open;
         self.config.bg_style = self.bg_style.clone();
@@ -249,37 +281,7 @@ impl ImageViewer {
     }
 
     pub fn image_modifies(&self, img: &mut image::DynamicImage) {
-        let new_width = (img.width() as f32 * self.magnify).round() as u32;
-        let new_height = (img.height() as f32 * self.magnify).round() as u32;
-        let mut processed_img = if (self.magnify - 1.0).abs() > 0.001 {
-            img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3)
-        } else {
-            img.clone()
-        };
-        match self.color_settings.rotate {
-            Rotate::Rotate90 => processed_img = processed_img.rotate90(),
-            Rotate::Rotate180 => processed_img = processed_img.rotate180(),
-            Rotate::Rotate270 => processed_img = processed_img.rotate270(),
-            _ => {}
-        }
-        let mut rgba_image = processed_img.to_rgba8();
-        if self.color_settings.is_setted() || self.color_settings.is_blured(){
-            if let Some(interface) = &self.gpu_interface {
-                let (w, h) = rgba_image.dimensions();
-                interface.change_colorcorrection( &self.color_settings, w as f32, h as f32);
-                interface.generate_image(rgba_image.as_mut(), w, h);
-            }
-            else {
-                if let Some(lut) = &self.lut {
-                    lut.apply_lut(&mut rgba_image);
-                }
-            }
-        }
-        *img = image::DynamicImage::ImageRgba8(rgba_image);
-        let bytes = img.as_bytes();
-        if bytes.iter().all(|&x| x == 0) {
-            println!("HIBA: A kép még mindig csupa nulla a módosítás után!");
-        }
+        apply_modifies_to_frame( img, &self.color_settings, self.magnify, &self.lut, &self.gpu_interface);
     }
 
     pub fn make_image_list(&mut self) {
@@ -353,6 +355,8 @@ impl ImageViewer {
         if self.texture.is_none() {
             return;
         }
+        self.anim_playing = false;
+        //self.anim_timer.stop();
 
         let mut save_name = self.image_full_path.clone();
 
@@ -408,8 +412,10 @@ impl ImageViewer {
                 let inex = self.exif.is_some();
                 let can = ( saveformat == SaveFormat::Jpeg || saveformat == SaveFormat::Webp
                     || saveformat == SaveFormat::Bmp ) && inex;
+                 let anim = self.anim_data.is_some() && (saveformat == SaveFormat::Gif || saveformat == SaveFormat::Webp);
+                                                                                                                        
                 let dial_need = saveformat == SaveFormat::Jpeg || saveformat == SaveFormat::Webp ||
-                    (saveformat == SaveFormat::Bmp && inex);
+                    (saveformat == SaveFormat::Bmp && inex) || anim;
                 self.save_dialog = Some(SaveSettings {
                     full_path: ut,
                     saveformat,
@@ -417,6 +423,8 @@ impl ImageViewer {
                     lossless: false,
                     can_include_exif: can,
                     include_exif: inex,
+                    save_all_frames: false,
+                    is_animation: anim,
                 });
                 if !dial_need {
                     self.completing_save();
@@ -489,29 +497,89 @@ impl ImageViewer {
                         }
                     }
                     SaveFormat::Webp => {
-                        let encoder =
-                            Encoder::from_image(&img).expect("Hiba a WebP enkóder létrehozásakor");
-                        let memory = if save_data.lossless {
-                            encoder.encode_lossless()
-                        } else {
-                            encoder.encode(save_data.quality as f32)
-                        };
-                        let mut webp = img_parts::webp::WebP::from_bytes(img_parts::Bytes::copy_from_slice(&*memory))
-                            .expect("Hiba a WebP struktúra feldolgozásakor");
-                        if let (true, Some(mut exif)) = (save_data.include_exif, self.exif.clone()) {
-                            let rot = exif.get_num_field("Orientation").unwrap_or(1.0);
-                            if !self.save_original || rot != 1.0 {
-                                if let Some(res) = resolution.clone() {
-                                    let thumbnail = exif.generate_fitted_thumbnail(&img.to_rgba8());
-                                    exif.patch_thumbnail(&thumbnail);
-                                    exif.patch_exifdata( res.xres, res.yres, self.image_size.x as u32, self.image_size.y as u32);
+                        if save_data.save_all_frames {
+                            if let Some(anim) = &self.anim_data {
+                                use webp_animation::{Encoder, EncoderOptions, EncodingConfig, EncodingType, LossyEncodingConfig};
+                                
+                                let settings = self.color_settings.clone();
+                                let magnify = self.magnify;
+                                let save_original = self.save_original;
+                                let lut = self.lut.clone();
+                                    
+                                let processed_images: Vec<image::DynamicImage> = anim.anim_frames
+                                    .par_iter()
+                                    .map(|frame| {
+                                        let mut f = frame.clone();
+                                        if !save_original {
+                                            apply_modifies_to_frame( &mut f, &settings, magnify, &lut, &self.gpu_interface);
+                                        }
+                                        f
+                                    })
+                                    .collect();
+                                let w = processed_images.first().unwrap().width();
+                                let h = processed_images.first().unwrap().height();
+                                
+                                let mut options  = EncoderOptions::default();
+                                let mut config  = EncodingConfig::default();
+                                let lossy =  LossyEncodingConfig::default();
+                                config.quality = save_data.quality as f32;
+                                config.encoding_type = if save_data.lossless {EncodingType::Lossless} else {EncodingType::Lossy(lossy)} ;
+                                config.method = 3;
+                                options .kmin  = 3;
+                                options .kmax  = 5;
+                                options.encoding_config = Some(config);
+                                let mut encoder = Encoder::new_with_options((w,h),options)
+                                    .expect("Hiba a WebP animációs enkóder létrehozásakor");
+                                let mut timestamp: i32 = 0;
+                                
+    
+                                for (i, frame_img) in processed_images.iter().enumerate() {
+                                    let raw_data = frame_img.to_rgba8();
+                                    encoder.add_frame(raw_data.as_raw(), timestamp).expect("Hiba");
+                                    timestamp += anim.delays[i].as_millis() as i32;
                                 }
+                                
+                                let final_webp_data = encoder.finalize(timestamp)
+                                    .expect("Hiba az animáció lezárásakor");
+                                let mut output_data = final_webp_data.to_vec();
+                                if save_data.include_exif && self.exif.is_some() {
+                                    if let Ok(mut webp_structure) = img_parts::webp::WebP::from_bytes(img_parts::Bytes::copy_from_slice(&output_data)) {
+                                         if let Some(exif_obj) = &self.exif {
+                                             webp_structure.set_exif(Some(img_parts::Bytes::from(exif_obj.raw_exif.clone())));
+                                             let mut buf = Vec::new();
+                                             webp_structure.encoder().write_to(&mut buf).ok();
+                                             output_data = buf;
+                                         }
+                                    }
+                                }
+                                std::fs::write(&save_data.full_path, output_data).expect("Fájl írási hiba");
                             }
-                            webp.set_exif(Some(img_parts::Bytes::from(exif.raw_exif)));
                         }
-                        let file = std::fs::File::create(&save_data.full_path).expect("Fájl létrehozási hiba");
-                        if let Err(e) = webp.encoder().write_to(file) {
-                            println!("Hiba a WebP fájl írásakor: {}", e);
+                        else {
+                            let encoder =
+                                Encoder::from_image(&img).expect("Hiba a WebP enkóder létrehozásakor");
+                            let memory = if save_data.lossless {
+                                encoder.encode_lossless()
+                            } else {
+                                encoder.encode(save_data.quality as f32)
+                            };
+                            let mut webp = img_parts::webp::WebP::from_bytes(img_parts::Bytes::copy_from_slice(&*memory))
+                                .expect("Hiba a WebP struktúra feldolgozásakor");
+                            if let (true, Some(mut exif)) = (save_data.include_exif, self.exif.clone()) {
+                                let rot = exif.get_num_field("Orientation").unwrap_or(1.0);
+                                if !self.save_original || rot != 1.0 {
+                                    if let Some(res) = resolution.clone() {
+                                        let thumbnail = exif.generate_fitted_thumbnail(&img.to_rgba8());
+                                        exif.patch_thumbnail(&thumbnail);
+                                        exif.patch_exifdata( res.xres, res.yres, self.image_size.x as u32, self.image_size.y as u32);
+                                    }
+                                }
+                                webp.set_exif(Some(img_parts::Bytes::from(exif.raw_exif)));
+                            }
+                            let file = std::fs::File::create(&save_data.full_path).expect("Fájl létrehozási hiba");
+                            if let Err(e) = webp.encoder().write_to(file) {
+                                println!("Hiba a WebP fájl írásakor: {}", e);
+                            }
                         }
                     }
                     SaveFormat::Tif => {
@@ -618,23 +686,61 @@ impl ImageViewer {
                     }
 
                     SaveFormat::Gif => {
-                        if let Err(e) = img.save(&save_data.full_path) {
-                            println!("Hiba a mentéskor ({:?}): {}", save_data.saveformat, e);
+                        if save_data.save_all_frames {
+                            if let Some(anim) = &self.anim_data {
+                                use gif::{Encoder, Frame, Repeat, DisposalMethod};
+                                use std::fs::File;
+                                // 1. Fájl létrehozása és az enkóder inicializálása
+                                let mut image_file = File::create(&save_data.full_path).expect("Fájl hiba");
+                                
+                                let settings = self.color_settings.clone();
+                                let magnify = self.magnify;
+                                let save_original = self.save_original;
+                                let lut_for_save: Option<Lut4ColorSettings> = if let Some(ref lut_rc) = self.lut {
+                                    let mut lut_clone = lut_rc.clone();
+                                    lut_clone.rough_transparency = true;
+                                    Some(lut_clone)
+                                } else {
+                                    None
+                                };
+                                let processed_images: Vec<image::RgbaImage> = anim.anim_frames
+                                    .par_iter()
+                                    .map(|frame| {
+                                        let mut f = frame.clone();
+                                        if !save_original {
+                                            apply_modifies_to_frame( &mut f, &settings, magnify, &lut_for_save,&self.gpu_interface);
+                                        }
+                                        f.to_rgba8()
+                                    })
+                                    .collect();
+                                let w = processed_images.first().unwrap().width() as u16;
+                                let h = processed_images.first().unwrap().height() as u16;
+
+                                let mut encoder = Encoder::new(&mut image_file, w, h, &[]).expect("GIF enkóder hiba");
+                                // Végtelen ismétlés beállítása
+                                encoder.set_repeat(Repeat::Infinite).unwrap();
+
+                                // 3. Képkockák hozzáadása (Szekvenciális paletta-számítás és írás)
+                                for (i, rgba_frame) in processed_images.into_iter().enumerate() {
+                                    // A GIF-nek 8-bites paletta kell (256 szín)
+                                    // Az image crate képes kiszámolni a palettát az RGBA-ból
+                                    let mut frame = Frame::from_rgba_speed( w, h, &mut rgba_frame.into_raw(), 
+                                     10, // Sebesség (1-30), a 10 egy jó kompromisszum
+                                    );
+                                    frame.dispose = DisposalMethod::Background;
+                                    frame.delay = (anim.delays[i].as_millis() / 10) as u16;
+                                    encoder.write_frame(&frame).expect("GIF frame írási hiba");
+                                }
+                            }
+                        }
+                        else {
+                            if let Err(e) = img.save(&save_data.full_path) {
+                                println!("Hiba a mentéskor ({:?}): {}", save_data.saveformat, e);
+                            }
                         }
                     }
                 }
                 
-                
-                /*if let Ok(meta) = rexiv2::Metadata::new_from_path(&save_data.full_path) {
-                    // 1. Átmásoljuk az eredeti EXIF-et, ha van
-                    if let Some(raw) = &self.raw_exif {
-                        // (Itt a korábban megbeszélt APP1/Exif beillesztés kellhet)
-                    }
-                    meta.set_pixel_per_unit_x(res.xres as f64);
-                    meta.set_pixel_per_unit_y(res.yres as f64);
-                    meta.set_units(if res.dpi { rexiv2::Unit::Inch } else { rexiv2::Unit::Cm });
-                    let _ = meta.save_to_file(&save_data.full_path);
-                }*/
             }
         }
     }
@@ -701,6 +807,8 @@ impl ImageViewer {
             return;
         };
         self.resolution = None;
+        self.anim_playing = false;
+        //self.anim_timer.stop();
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("IView")));
         if let Ok(mut img) = image::open(&filepath) {
             if self.image_format == SaveFormat::Tif {

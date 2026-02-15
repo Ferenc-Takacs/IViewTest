@@ -81,8 +81,8 @@ impl ColorSettings {
             sharpen_radius: 0.2, // 0.2 .. 3.0
             rotate: Rotate::Rotate0,
             oklab: true,
-            transparent_color: [255, 255, 255, 255],
-            transparency_tolerance: 0.0, // 0.0 - 1.0
+            transparent_color: [255, 255, 255, 0],
+            transparency_tolerance: 0.0,
             use_transparency: false,
             rough_transparency: false,
         }
@@ -275,7 +275,7 @@ impl Lut4ColorSettings {
             data:data,
             sharpen_amount:0.0,
             sharpen_radius:0.0,
-            transparent_color: [255, 255, 255, 255],
+            transparent_color: [255, 255, 255, 0],
             transparency_tolerance: 0.0, // 0.0 - 1.0
             use_transparency: false,
             rough_transparency: false,
@@ -313,33 +313,29 @@ impl Lut4ColorSettings {
     }
 
     pub fn color_to_alpha(&self,  pixel: & mut image::Rgba<u8> ) {
-        let max_dist = self.transparency_tolerance * 100.0;        
+        let max_dist = self.transparency_tolerance * 255.0;
         let dist = ((pixel[0] as f32 - self.transparent_color[0] as f32).powi(2) +
                    (pixel[1] as f32 - self.transparent_color[1] as f32).powi(2) +
                    (pixel[2] as f32 - self.transparent_color[2] as f32).powi(2)).sqrt();
-        if dist < 5.0*max_dist {
+        if dist < max_dist {
             if self.transparency_tolerance < 0.001 {
                 pixel[3] = 0;
             }
             else {
-                let mut alpha = (dist*255.0 / max_dist) as u32; 
+                let alpha = dist / max_dist; 
                 if self.rough_transparency {
-                    if alpha < 128 {
+                    if alpha < 0.5 {
                         pixel[0] = self.transparent_color[0];
                         pixel[1] = self.transparent_color[1];
                         pixel[2] = self.transparent_color[2];
-                        pixel[3] = 0u8;
+                        pixel[3] = self.transparent_color[3];
                     }
                     else {
-                        pixel[3] = 255u8;
+                        pixel[3] = if pixel[3] < 128 { 0u8 } else { 255u8 };
                     }
                 }
                 else {
-                    alpha = alpha.clamp(0, 255);
-                    pixel[3] = alpha.clamp(0, 255) as u8;
-                    //pixel[0] = ((pixel[0] as u32 * alpha) / 255) as u8;
-                    //pixel[1] = ((pixel[1] as u32 * alpha) / 255) as u8;
-                    //pixel[2] = ((pixel[2] as u32 * alpha) / 255) as u8;
+                    pixel[3] = (pixel[3] as f32 * alpha).clamp(0.0, 255.0) as u8;
                 }
             }
         }

@@ -6,27 +6,36 @@ impl ImageViewer {
     pub fn handle_shortcuts(&mut self, ctx: &egui::Context){
 
        // Gyorsbillentyűk figyelése
-        if ctx.input_mut(|i| {
-            i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::ALT | egui::Modifiers::SHIFT,
-                egui::Key::C,
-            ))
-        }) {
+       // release section
+        if ctx.input(|i| i.key_released(egui::Key::C) && i.modifiers.command && i.modifiers.shift ) {
             // copy view
             self.save_original = false;
             self.copy_to_clipboard();
-            
-        } else if ctx.input_mut(|i| {
-            i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::ALT | egui::Modifiers::SHIFT,
-                egui::Key::X,
-            ))
-        }) {
+        }
+        else if ctx.input(|i| i.key_released(egui::Key::C) && i.modifiers.command ) {
+            // copy
+            self.save_original = true;
+            self.copy_to_clipboard();
+        }
+        else if ctx.input(|i| i.key_released(egui::Key::V) && i.modifiers.command && i.modifiers.shift) {
+        }
+        else if ctx.input(|i| i.key_released(egui::Key::V) && i.modifiers.command) {
+            // paste
+            self.copy_from_clipboard(ctx);
+        }
+        else if ctx.input(|i| i.key_released(egui::Key::X) && i.modifiers.command && i.modifiers.shift) {
             // change view
             self.save_original = false;
             self.change_with_clipboard(ctx);
-            
-        } else if ctx.input_mut(|i| {
+        }
+        else if ctx.input(|i| i.key_released(egui::Key::X) && i.modifiers.command) {
+            // change
+            self.save_original = true;
+            self.change_with_clipboard(ctx);
+        }
+
+
+        if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::SHIFT,
                 egui::Key::S,
@@ -108,21 +117,10 @@ impl ImageViewer {
             ))
         }) {
             // rotate  to 0
-            let r = self.color_settings.rotate == Rotate::Rotate90
+            let rot = self.color_settings.rotate == Rotate::Rotate90
                 || self.color_settings.rotate == Rotate::Rotate270;
             self.color_settings.rotate = Rotate::Rotate0;
-            self.review(ctx, true, r);
-            
-        } else if ctx.input_mut(|i| {
-            i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::ALT,
-                egui::Key::C,
-            ))
-        }) {
-            // copy
-            // not work with Ctrl
-            self.save_original = true;
-            self.copy_to_clipboard();
+            self.review(ctx, true, rot);
             
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
@@ -130,20 +128,6 @@ impl ImageViewer {
                 egui::Key::V,
             ))
         }) {
-            // paste
-            // not work with Ctrl
-            self.copy_from_clipboard(ctx);
-            
-        } else if ctx.input_mut(|i| {
-            i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::ALT,
-                egui::Key::X,
-            ))
-        }) {
-            // change
-            // not work with Ctrl
-            self.save_original = true;
-            self.change_with_clipboard(ctx);
             
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(

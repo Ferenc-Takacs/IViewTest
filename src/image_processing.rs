@@ -98,7 +98,7 @@ pub struct AnimatedImage {
     pub delays: Vec<std::time::Duration>, // Időzítések
 }
 
-pub fn color_image_to_dynamic(color_image: egui::ColorImage) -> image::DynamicImage {
+/*pub fn color_image_to_dynamic(color_image: egui::ColorImage) -> image::DynamicImage {
     let size = color_image.size;
     // Flatten Color32 (RGBA) pixels into a Vec<u8>
     let pixels = color_image.pixels.iter()
@@ -111,7 +111,7 @@ pub fn color_image_to_dynamic(color_image: egui::ColorImage) -> image::DynamicIm
 
     // Wrap in DynamicImage
     image::DynamicImage::ImageRgba8(buffer)
-}
+}*/
 
 pub fn draw_custom_background(ui: &mut egui::Ui, bg_style: &BackgroundStyle) {
     let rect = ui.max_rect(); // A terület, ahová a kép kerülne
@@ -229,8 +229,8 @@ impl ImageViewer {
         }
 
         let mut rgba_image = img.to_rgba8();
-        self.image_size.x = rgba_image.dimensions().0 as f32;
-        self.image_size.y = rgba_image.dimensions().1 as f32;
+        let (width, height) = rgba_image.dimensions();
+        self.image_size = (width, height).into();
         
         if let Some(interface) = &self.gpu_interface {
             interface.change_colorcorrection(
@@ -241,7 +241,6 @@ impl ImageViewer {
 
         if self.color_settings.is_setted() || self.color_settings.is_blured() {
             if self.gpu_interface.is_some() {
-                let (width, height) = rgba_image.dimensions();
                 self.gpu_interface.as_ref().unwrap().generate_image(rgba_image.as_mut(), width, height);
             }
             else if let Some(lut) = &self.lut {
@@ -250,9 +249,11 @@ impl ImageViewer {
         }
 
         self.rgba_image = Some(rgba_image.clone());
+        
+        
         let pixel_data = rgba_image.into_raw();
         let color_image = egui::ColorImage::from_rgba_unmultiplied(
-            [self.image_size.x as usize, self.image_size.y as usize],
+            [width as usize, height as usize],
             &pixel_data,
         );
         

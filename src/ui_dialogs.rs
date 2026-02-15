@@ -233,6 +233,14 @@ impl ImageViewer {
                         }
                     }
                     ui.add_space(10.0);
+                    
+                    if save_data.is_animation {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Animation detected:").strong());
+                            ui.radio_value(&mut save_data.save_all_frames, false, "Current Frame Only");
+                            ui.radio_value(&mut save_data.save_all_frames, true, "Full Animation");
+                        });
+                    }
 
                     ui.horizontal(|ui| {
                         if ui.button("💾 Save").clicked() {
@@ -407,11 +415,31 @@ impl ImageViewer {
 
         if self.color_correction_dialog {
             let mut changed = false;
+            //let mut dialog_copy = self.color_correction_dialog;
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("colorcorrection_viewport"),
+                egui::ViewportBuilder::default()
+                .with_title("Color Correction for iView")
+                .with_inner_size([440.0, 350.0])
+                .with_resizable(false)
+                //.with_minimize_button(false)
+                .with_maximize_button(false)
+                .with_always_on_top(),
+                |ctx, _| {
+                if ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::C)) {
+                    self.color_correction_dialog = false;
+                    ctx.send_viewport_cmd_to( egui::ViewportId::ROOT, egui::ViewportCommand::Focus );
+                }
+                egui::CentralPanel::default()
+                .frame(egui::Frame::default().fill(ctx.style().visuals.window_fill()).inner_margin(2.0))
+                .show( ctx, |ui| {
+                    
+            /*let mut changed = false;
             let mut dialog_copy = self.color_correction_dialog;
             egui::Window::new("Color corrections")
             .open(&mut dialog_copy) // Bezáró gomb (X) kezelése
             .resizable(false)
-            .show(ctx, |ui| {
+            .show(ctx, |ui| {*/
                 ui.spacing_mut().slider_width = 300.0;
 
                  ui.horizontal(|ui| {
@@ -467,7 +495,6 @@ impl ImageViewer {
                         changed = true;
                     }
                 }
-                ui.separator();
 
                 // --- HSV (Színvilág) ---
                 //ui.label(egui::RichText::new("Hsv/Oklab Color Shift").strong());
@@ -481,9 +508,6 @@ impl ImageViewer {
                             changed = true;
                         }
                     });
-                    /*ui.add_enabled_ui(true, |ui| {
-                        ui.small("Az Oklab megőrzi a színek érzékelt fényerejét módosítás közben.");
-                    });*/
                     let hue = ui.add(egui::Slider::new(
                         &mut self.color_settings.hue_shift, -180.0..=180.0)
                         .text("Hue Shift"));
@@ -525,7 +549,6 @@ impl ImageViewer {
                     }
 
                 });                
-                //ui.separator();
 
                 // --- Élesítés / Blur (GPU előkészítés) ---
                 ui.label(egui::RichText::new("Sharpen (Amount > 0) & Blur (Amount < 0)").strong());
@@ -569,6 +592,61 @@ impl ImageViewer {
                     }
                 });
 
+
+                ui.group(|ui| {
+                    if ui.checkbox(&mut self.color_settings.use_transparency, "Use transparency color").changed() {
+                        changed = true;
+                    };
+                    ui.horizontal(|ui| {
+                        let res = ui.add(egui::Slider::new(
+                            &mut self.color_settings.transparency_tolerance, 0.0..=1.0)
+                            .text("Tolerance"));
+                        if self.gpu_interface.is_none() {
+                            if res.drag_stopped() || (res.changed() && !ui.input(|i| i.pointer.any_down())) {
+                                changed = true;
+                            }
+                        }
+                        else {
+                            if res.changed() {
+                                changed = true;
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Transparent Color ");
+                        let color = self.color_settings.transparent_color;
+                        
+                        let (rect, _) = ui.allocate_exact_size(egui::vec2(26.0, 16.0), egui::Sense::hover());
+                        let col = egui::Color32::from_rgba_unmultiplied(color[0], color[1], color[2], 255);
+                        ui.painter().rect_filled(rect, 2.0, col);
+                        //ui.painter().frame(rect,1.0);
+                        
+                        ui.label("Red:");
+                        let mut r_txt = format!("{}",color[0]);
+                        let r_res = ui.add(egui::TextEdit::singleline(&mut r_txt).desired_width(30.0));
+                        if r_res.changed() {
+                            self.color_settings.transparent_color[0] = r_txt.parse::<u8>().unwrap_or(color[0]);
+                            changed=true;
+                        }
+                        ui.label("Green:");
+                        let mut g_txt = format!("{}",color[1]);
+                        let g_res = ui.add(egui::TextEdit::singleline(&mut g_txt).desired_width(30.0));
+                        if g_res.changed() {
+                            self.color_settings.transparent_color[1] = g_txt.parse::<u8>().unwrap_or(color[1]);
+                            changed=true;
+                        }
+                        ui.label("Blue:");
+                        let mut b_txt = format!("{}",color[2]);
+                        let b_res = ui.add(egui::TextEdit::singleline(&mut b_txt).desired_width(30.0));
+                        if b_res.changed() {
+                            self.color_settings.transparent_color[2] = b_txt.parse::<u8>().unwrap_or(color[2]);
+                            changed=true;
+                        }
+                    });
+                });
+
+                
+
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     if ui.button("Reset All Settings").clicked() {
@@ -588,13 +666,21 @@ impl ImageViewer {
                     }
                        
                 });
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    self.color_correction_dialog = false;
+                    ctx.send_viewport_cmd_to( egui::ViewportId::ROOT, egui::ViewportCommand::Focus );
+                }
+            });
             });
             if changed {
                 self.settings_dirty = true;
                 self.review(ctx, true, false);
             }
-            self.color_correction_dialog = dialog_copy;
+            //self.color_correction_dialog = dialog_copy;
         }
+        
+        self.menvar.after_all_menus(ctx, self.act());
+
     }
 
 }

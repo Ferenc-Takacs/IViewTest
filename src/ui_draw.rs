@@ -72,7 +72,9 @@ impl ImageViewer {
                 let pos = (if self.center { (display_size_netto - inner_size) * 0.5 } else { zero }).floor();
 
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(inner_size.into()));
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
+                if self.want_magnify == -1.0 {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos.into()));
+                }
 
                 if let Some(tex) = self.texture.as_ref() { // CPU
                 
@@ -186,6 +188,18 @@ impl ImageViewer {
                                             });
                                         }
                                     );
+                                    if ctx.input(|i| i.pointer.primary_clicked()) {
+                                        // Átváltjuk a színt f32-re a shader/korrekció számára
+                                        self.color_settings.transparent_color = [
+                                            color.r() as u8,
+                                            color.g() as u8,
+                                            color.b() as u8,
+                                            0
+                                        ];
+                                        if self.color_correction_dialog && self.color_settings.use_transparency {
+                                            self.review(ctx, true, false);
+                                        }
+                                    }
                                 }
                             }
                         }

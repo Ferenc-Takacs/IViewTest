@@ -31,10 +31,11 @@ pub struct GpuFilterSettings {
     pub sharpen_amount: f32,
     pub image_width: f32,
     pub image_height: f32,
-    pub transparent_color: [u8; 4],
     pub transparency_tolerance: f32,
     pub use_transparency: u32,
     pub rough_transparency: u32, // for gif
+    pub _padding: u32, // 16 bájtos igazítás
+    pub transparent_color: [f32; 4],
 }
 
 #[repr(C)]
@@ -272,10 +273,16 @@ impl GpuInterface {
             sharpen_amount: colset.sharpen_amount,
             image_width: width,
             image_height: height,
-            transparent_color: colset.transparent_color,
             transparency_tolerance: colset.transparency_tolerance,
             use_transparency: if colset.use_transparency { 1 } else { 0 },
             rough_transparency: if colset.rough_transparency { 1 } else { 0 },
+            _padding: 0,
+            transparent_color: [
+                colset.transparent_color[0] as f32 / 255.0,
+                colset.transparent_color[1] as f32 / 255.0,
+                colset.transparent_color[2] as f32 / 255.0,
+                0.0,
+            ],
         };
         self.queue.write_buffer(&self.filter_params_buffer, 0, bytemuck::bytes_of(&gpu_filter));
 
