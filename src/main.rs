@@ -11,7 +11,7 @@ TODO
 */
 
 // disable terminal window beyond graphic window in release version
-//#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 //mod exif;
 mod gpu_colors;
@@ -102,16 +102,11 @@ struct ImageViewer {
     pub image_size: Pf32, // beolvasott, és átméretezett kép mérete pixelben
     pub original_image_size: Pf32,  // beolvasott kép mérete pixelben
     pub center: bool,           // igaz, ha középe tesszük az ablakot, egyébként a bal felső sarokba
-    pub show_info: bool,
-    pub display_size_netto: Pf32, // a képernyő méretből levonva az ablak keret
     pub aktualis_offset: Pf32,    // megjelenítés kezdőpozíció a nagyított képen
     pub sort: SortDir,
-    pub save_dialog: Option<SaveSettings>,
     pub color_settings: ColorSettings,
     pub settings_dirty: bool, // Jelzi, ha újra kell számolni a LUT-ot
     pub lut: Option<Lut4ColorSettings>,
-    pub color_correction_dialog: bool,
-    pub show_about_window: bool,
     pub refit_reopen: bool,
     pub fit_open: bool,
     pub same_correction_open: bool,
@@ -120,8 +115,8 @@ struct ImageViewer {
     pub config: AppSettings,
     pub resolution: Option<Resolution>,
     pub recent_file_modified: bool,
-    pub recent_window_size: Pf32,
-    pub show_recent_window: bool,
+    //pub recent_window_size: Pf32,
+    //pub show_recent_window: bool,
     pub show_exif_details: bool,
     pub is_animated: bool,    // Ez a fájl animálható-e?
     pub anim_playing: bool,   // Fut-e most az animáció?
@@ -136,7 +131,15 @@ struct ImageViewer {
     pub gpu_tried_init: bool,
     pub use_gpu: bool,
     pub modified: bool,
+    pub save_dialog: Option<SaveSettings>,
+    pub color_correction_dialog: bool,
+    pub show_info: bool,
+    pub show_about_window: bool,
     pub menvar: MenuVariables,
+    pub save_dialog_focus: bool,
+    pub color_correction_dialog_focus: bool,
+    pub show_info_focus: bool,
+    pub show_about_window_focus: bool,
 }
 
 
@@ -161,20 +164,15 @@ impl Default for ImageViewer {
             original_image: None,
             resized_image: None,
             rgba_image: None,
-            image_size: Pf32{x:800.0, y:600.0},
-            original_image_size: Pf32{x:800.0, y:600.0},
+            image_size: (800.0, 600.0).into(),
+            original_image_size: (800.0, 600.0).into(),
             center: false,
-            show_info: false,
-            display_size_netto: Pf32{x:0.0, y:0.0},
-            aktualis_offset: Pf32{x:0.0, y:0.0},
+            aktualis_offset: (0.0, 0.0).into(),
             sort: SortDir::Name,
-            save_dialog: None,
             color_settings: ColorSettings::default(),
             //image_processor: None,
             settings_dirty: false,
             lut: None,
-            color_correction_dialog: false,
-            show_about_window: false,
             refit_reopen: false,
             fit_open: true,
             same_correction_open: false,
@@ -183,8 +181,8 @@ impl Default for ImageViewer {
             config: AppSettings::default(),
             resolution: None,
             recent_file_modified: false,
-            recent_window_size: (0.0, 0.0).into(),
-            show_recent_window: false,
+            //recent_window_size: (0.0, 0.0).into(),
+            //show_recent_window: false,
             show_exif_details: false,
             is_animated: false,  // Ez a fájl animálható-e?
             anim_playing: false, // Fut-e most az animáció?
@@ -199,7 +197,15 @@ impl Default for ImageViewer {
             gpu_tried_init: false,
             use_gpu: true,
             modified: false,
+            save_dialog: None,
+            color_correction_dialog: false,
+            show_info: false,
+            show_about_window: false,
             menvar: MenuVariables::default(),
+            save_dialog_focus: false,
+            color_correction_dialog_focus: false,
+            show_info_focus: false,
+            show_about_window_focus: false,
         }
     }
 }
@@ -245,6 +251,7 @@ pub struct MenuVariables {
     pub channels_menu_pos:  Pf32,
     pub background_menu_pos: Pf32,
     pub zoom_menu_pos:      Pf32,
+    pub last_msg :          String,
 }
 
 impl Default for MenuVariables {
@@ -274,6 +281,7 @@ impl Default for MenuVariables {
             channels_menu_pos:  (0.0,0.0).into(),
             background_menu_pos: (0.0,0.0).into(),
             zoom_menu_pos:      (0.0,0.0).into(),
+            last_msg:           "".into(),
         }
     }
 }
@@ -281,18 +289,17 @@ impl Default for MenuVariables {
 
 
 impl eframe::App for ImageViewer {
-    
+
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        
+
         self.anim_and_gpu(ctx, frame);
-        
-        self.change_magnify = 0.0;
-        self.mouse_zoom = false;
-        
+
         self.handle_shortcuts(ctx);
         
         self.draw_main_menu(ctx);
-        
+
+        self.dialogs(ctx);
+
         let dropped_file = ctx.input_mut(|i| {
             if !i.raw.dropped_files.is_empty() {
                 let files = std::mem::take(&mut i.raw.dropped_files);
@@ -305,14 +312,11 @@ impl eframe::App for ImageViewer {
             self.open_image(ctx, &path.to_path_buf(), true);
             //println!("Fájl behúzva: {:?}", path);
         }
-        
+
         self.draw_image_area(ctx);
-        
-        self.dialogs(ctx);
-        
+
     }
 
-    
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.save_settings();
     }

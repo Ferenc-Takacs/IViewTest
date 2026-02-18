@@ -121,14 +121,6 @@ impl ImageViewer {
                 || self.color_settings.rotate == Rotate::Rotate270;
             self.color_settings.rotate = Rotate::Rotate0;
             self.review(ctx, true, rot);
-            
-        } else if ctx.input_mut(|i| {
-            i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::ALT,
-                egui::Key::V,
-            ))
-        }) {
-            
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
@@ -165,17 +157,6 @@ impl ImageViewer {
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
-                egui::Key::A,
-            ))
-        }) {
-            // recent path ...
-            //if !self.config.recent_files.is_empty() {
-            self.show_recent_window =
-                !self.show_recent_window && !self.config.recent_files.is_empty();
-            //}
-        } else if ctx.input_mut(|i| {
-            i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::NONE,
                 egui::Key::N,
             ))
         }) {
@@ -184,7 +165,7 @@ impl ImageViewer {
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
-                egui::Key::D,
+                egui::Key::G,
             ))
         }) {
             // background rotate
@@ -281,7 +262,6 @@ impl ImageViewer {
                 self.want_magnify = 6.0;
                 self.review(ctx,true, false);
             }
-            self.show_info = !self.show_info;
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
@@ -292,7 +272,6 @@ impl ImageViewer {
                 self.want_magnify = 7.0;
                 self.review(ctx,true, false);
             }
-            self.show_info = !self.show_info;
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
@@ -303,7 +282,6 @@ impl ImageViewer {
                 self.want_magnify = 8.0;
                 self.review(ctx,true, false);
             }
-            self.show_info = !self.show_info;
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
@@ -314,76 +292,69 @@ impl ImageViewer {
                 self.want_magnify = 9.0;
                 self.review(ctx,true, false);
             }
-            self.show_info = !self.show_info;
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::SHIFT,
+                egui::Modifiers::COMMAND,
                 egui::Key::Num0,
             ))
         }) {
-            // 0
             if self.magnify != 0.1 {
                 self.want_magnify = 0.1;
                 self.review(ctx,true, false);
             }
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::SHIFT,
+                egui::Modifiers::COMMAND,
                 egui::Key::Num1,
             ))
         }) {
-            // 1
             if self.magnify != 0.8 {
                 self.want_magnify = 0.8;
                 self.review(ctx,true, false);
             }
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::SHIFT,
+                egui::Modifiers::COMMAND,
                 egui::Key::Num2,
             ))
         }) {
-            // 2
             if self.magnify != 0.75 {
                 self.want_magnify = 0.75;
                 self.review(ctx,true, false);
             }
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::SHIFT,
+                egui::Modifiers::COMMAND,
                 egui::Key::Num3,
             ))
         }) {
-            // 3
             if self.magnify != 0.5 {
                 self.want_magnify = 0.5;
                 self.review(ctx,true, false);
             }
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::SHIFT,
+                egui::Modifiers::COMMAND,
                 egui::Key::Num4,
             ))
         }) {
-            // 4
             if self.magnify != 0.45 {
                 self.want_magnify = 0.45;
                 self.review(ctx,true, false);
             }
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::SHIFT,
+                egui::Modifiers::COMMAND,
                 egui::Key::Num5,
             ))
         }) {
-            // 5
             if self.magnify != 0.4 {
                 self.want_magnify = 0.4;
                 self.review(ctx,true, false);
             }
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::SHIFT,
+                egui::Modifiers::COMMAND,
                 egui::Key::Num6,
             ))
         }) {
@@ -391,10 +362,9 @@ impl ImageViewer {
                 self.want_magnify = 0.35;
                 self.review(ctx,true, false);
             }
-            self.show_info = !self.show_info;
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::SHIFT,
+                egui::Modifiers::COMMAND,
                 egui::Key::Num7,
             ))
         }) {
@@ -402,10 +372,9 @@ impl ImageViewer {
                 self.want_magnify = 0.3;
                 self.review(ctx,true, false);
             }
-            self.show_info = !self.show_info;
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::SHIFT,
+                egui::Modifiers::COMMAND,
                 egui::Key::Num8,
             ))
         }) {
@@ -413,10 +382,9 @@ impl ImageViewer {
                 self.want_magnify = 0.25;
                 self.review(ctx,true, false);
             }
-            self.show_info = !self.show_info;
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
-                egui::Modifiers::SHIFT,
+                egui::Modifiers::COMMAND,
                 egui::Key::Num9,
             ))
         }) {
@@ -424,7 +392,6 @@ impl ImageViewer {
                 self.want_magnify = 0.2;
                 self.review(ctx,true, false);
             }
-            self.show_info = !self.show_info;
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
@@ -434,6 +401,27 @@ impl ImageViewer {
             // f
             self.want_magnify = -1.0;
             self.review(ctx,true, false);
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::ArrowLeft,
+            ))
+        }) {
+            self.anim_prev_frame(ctx);
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::ArrowRight,
+            ))
+        }) {
+            self.anim_next_frame(ctx);
+        } else if ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::NONE,
+                egui::Key::Space,
+            ))
+        }) {
+            self.anim_play_stop(ctx);
         } else if ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut::new(
                 egui::Modifiers::NONE,
@@ -447,9 +435,9 @@ impl ImageViewer {
                 self.show_info = false;
             } else if let Some(_adatok) = &mut self.save_dialog {
                 self.save_dialog = None;
-            } else if self.show_recent_window {
+            } else /*if self.show_recent_window {
                 self.show_recent_window = false;
-            } else if self.show_about_window {
+            } else*/ if self.show_about_window {
                 self.show_about_window = false;
             } else {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);

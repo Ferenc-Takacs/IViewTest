@@ -167,27 +167,34 @@ impl MenuVariables {
         //if menu == Menu::Options {   println!("{}",ui.available_width()); }
     }
 
-    pub fn after_all_menus(&mut self, ctx: &egui::Context, act: bool) {
+    pub fn after_all_menus(&mut self, ctx: &egui::Context, act: bool) -> bool { // true, if turn off all dialog
         let main_window_act = ctx.input(|i| i.viewport().focused == Some(true));
-        //println!("{} {} {} {}",  main_window_act,  self.main_menu_active,  self.other_menu_active,  self.hided);
+        
+        //let msg = format!("{} {} {} {} {} {:?}", 
+        //    main_window_act,  self.main_menu_active,  self.other_menu_active, act,  self.hided, self.current_menu);
+        //if msg!=self.last_msg {
+        //    println!("{}",msg);
+        //    self.last_msg = msg;
+        //}
 
+        if !main_window_act && self.main_menu_active && !self.other_menu_active && self.hided && self.current_menu == Menu::None {
+            ctx.send_viewport_cmd_to( egui::ViewportId::ROOT, egui::ViewportCommand::Focus );
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+        
         if self.hide_menu_request && (
-            main_window_act || self.main_menu_active || self.other_menu_active) {
+            main_window_act || self.main_menu_active || self.other_menu_active ) {
             self.hide_menu_request = false;
             //println!("stop timing");
         }
-        if self.hided && main_window_act {
+        if self.hided && main_window_act && !act {
             //println!("show menu");
             self.hided = false;
-            //ctx.request_repaint(); 
             self.main_menu_active = false;
             self.other_menu_active = false;
             self.change_menu(ctx,Menu::None);
-            //self.change_menu(ctx,Menu::None);
-            //self.closing_menu_request = true;
-            //self.closing_menu_request_time = ctx.input(|i| i.time);
-            //ctx.send_viewport_cmd_to( egui::ViewportId::ROOT, egui::ViewportCommand::Focus );
-            return;
+            
+            return false;
         }
         if !self.other_menu_active && !self.main_menu_active && !main_window_act
             && !self.closing_menu_request && !act
@@ -210,7 +217,7 @@ impl MenuVariables {
             //println!("to none 2");
             self.change_menu(ctx, Menu::None);
         }
-        if !main_window_act && !self.main_menu_active&& !self.other_menu_active && !self.hided {
+        if !main_window_act && !self.main_menu_active&& !self.other_menu_active && !self.hided && !act {
             if !self.hide_menu_request {
                 self.hide_menu_request_time = ctx.input(|i| i.time);
                 self.hide_menu_request = true;
@@ -219,11 +226,12 @@ impl MenuVariables {
                 //println!("hide menu");
                 self.hided = true;
                 self.hide_menu_request = false;
+                return true;
             }
-            //ctx.request_repaint(); 
         }
         self.main_menu_active = false;
         self.other_menu_active = false;
+        return false;
     }
     
 }
@@ -265,15 +273,35 @@ macro_rules! show_menu {
 
 impl ImageViewer {
     
+    pub fn after_all_menus(&mut self, ctx: &egui::Context) {
+        if self.menvar.current_menu == Menu::None {
+            if ctx.input(|i| i.pointer.any_click()) {
+                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+        }
+        if self.menvar.after_all_menus( ctx, self.act()) {
+            self.act_off();
+        }
+    }
+
     pub fn act(&self) -> bool {
-        self.color_correction_dialog || self.show_info ||
-        self.save_dialog.is_some() || self.show_about_window
+        (self.color_correction_dialog && self.color_correction_dialog_focus) ||
+        (self.show_info && self.show_info_focus) ||
+        (self.save_dialog.is_some() && self.save_dialog_focus) ||
+        (self.show_about_window && self.show_about_window_focus)
+    }
+
+    pub fn act_off(&mut self) {
+        self.color_correction_dialog = false;
+        self.show_info = false;
+        self.save_dialog = None;
+        self.show_about_window = false;
     }
 
     pub fn draw_main_menu(&mut self, ctx: &egui::Context) {
         // Menüsor kialakítása
 
-        // Főmenü
+        // Főmenü (must first)
         show_menu!(self.menvar, ctx, Menu::None, ui, {
             let file_btn = ui.button("File");
             if file_btn.clicked() {
@@ -294,7 +322,6 @@ impl ImageViewer {
             if ui.add(prev_button).clicked() {
                 self.menvar.change_menu(ctx,Menu::None);
                 self.navigation(ctx, -1);
-                ui.close_kind(egui::UiKind::Menu);
             }
             let next_button = egui::Button::new(">>").shortcut_text(ctx.format_shortcut(
                 &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::N),
@@ -302,10 +329,8 @@ impl ImageViewer {
             if ui.add(next_button).clicked() {
                 self.menvar.change_menu(ctx,Menu::None);
                 self.navigation(ctx, 1);
-                ui.close_kind(egui::UiKind::Menu);
             }
 
-            let mut frame_copy: Option<usize> = None;
             if self.anim_data.is_some() {
                 
                 separator(ui);
@@ -319,14 +344,7 @@ impl ImageViewer {
                     || ui.input(|i| i.key_pressed(egui::Key::Space))
                 {
                     self.menvar.change_menu(ctx,Menu::None);
-                    self.anim_playing = !self.anim_playing;
-                    if self.anim_playing
-                        && !self.anim_loop
-                        && self.current_frame + 1 == self.total_frames
-                    {
-                        self.current_frame = 0;
-                    }
-                    self.last_frame_time = std::time::Instant::now();
+                    self.anim_play_stop(ctx);
                 }
 
                 if ui.button("⏮").clicked() {
@@ -338,35 +356,19 @@ impl ImageViewer {
                 if ui.button("◀").clicked() || ui.input(|i| i.key_pressed(egui::Key::ArrowLeft))
                 {
                     self.menvar.change_menu(ctx,Menu::None);
-                    self.anim_playing = false;
-                    if self.current_frame == 0 {
-                        self.current_frame = self.total_frames - 1;
-                    } else {
-                        self.current_frame -= 1;
-                    }
-                    frame_copy = Some(self.current_frame);
+                    self.anim_prev_frame(ctx);
                 }
 
                 if ui.button("▶").clicked() || ui.input(|i| i.key_pressed(egui::Key::ArrowRight))
                 {
                     self.menvar.change_menu(ctx,Menu::None);
-                    self.anim_playing = false;
-                    self.current_frame = (self.current_frame + 1) % self.total_frames;
-                    frame_copy = Some(self.current_frame);
-                    
+                    self.anim_next_frame(ctx);
                 }
                 ui.label(format!(
                     "Frame: {} / {}",
                     self.current_frame + 1,
                     self.total_frames
                 ));
-            }
-            if let Some(frame) = frame_copy {
-                if let Some(anim) = &self.anim_data {
-                    self.original_image = Some(anim.anim_frames[frame].clone());
-                    self.review(ctx, true, false);
-                    ctx.request_repaint();
-                }
             }
         });
 
@@ -548,7 +550,9 @@ impl ImageViewer {
                 self.menvar.rotate_menu_pos = pos( ui, rotate_btn.rect.right_top().into(), self.menvar.options_menu_pos);
                 self.menvar.change_menu(ctx,Menu::Rotate);
             }
-            let background_btn = ui.button("Background                 >");
+            let background_btn = ui.add(egui::Button::new("Background           >").shortcut_text(ctx.format_shortcut(
+                    &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::G),
+                )));
             if background_btn.clicked() {
                 self.menvar.background_menu_pos = pos( ui, background_btn.rect.right_top().into(), self.menvar.options_menu_pos);
                 self.menvar.change_menu(ctx,Menu::Backgrounds);
@@ -570,6 +574,13 @@ impl ImageViewer {
                 self.menvar.change_menu(ctx,Menu::None);
                 self.color_correction_dialog = true;
             }
+            let info_button = egui::Button::new("Info                                ").shortcut_text(ctx.format_shortcut(
+                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::I),
+            ));
+            if ui.add(info_button).clicked() {
+                self.show_info = true;
+                self.menvar.change_menu(ctx,Menu::None);
+            }
 
             if ui.selectable_label(self.refit_reopen, "Refit at Reopen").clicked()
             {
@@ -577,7 +588,7 @@ impl ImageViewer {
                 self.menvar.change_menu(ctx,Menu::None);
             }
 
-            if ui.selectable_label(self.use_gpu, "Use Gpu (off at restart)").clicked()
+            if ui.selectable_label(self.use_gpu, "Use Gpu").clicked()
             {
                 self.use_gpu = !self.use_gpu;
                 if !self.use_gpu {
@@ -599,13 +610,6 @@ impl ImageViewer {
                 self.menvar.change_menu(ctx,Menu::None);
             }
 
-            let info_button = egui::Button::new("Info").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::I),
-            ));
-            if ui.add(info_button).clicked() {
-                self.show_info = true;
-                self.menvar.change_menu(ctx,Menu::None);
-            }
             if ui.selectable_label(self.anim_loop, "Animation Loop").clicked()
             {
                 self.anim_loop = !self.anim_loop;
@@ -700,43 +704,43 @@ impl ImageViewer {
             }
             separator(ui);
             if ui.add(egui::Button::new("0.8").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num1)))).clicked() {
+                &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Num1)))).clicked() {
                 need = 0.8;
             }
             if ui.add(egui::Button::new("0.75").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num2)))).clicked() {
+                &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Num2)))).clicked() {
                 need = 0.75;
             }
             if ui.add(egui::Button::new("0.5").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num3)))).clicked() {
+                &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Num3)))).clicked() {
                 need = 0.5;
             }
             if ui.add(egui::Button::new("0.45").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num4)))).clicked() {
+                &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Num4)))).clicked() {
                 need = 0.45;
             }
             if ui.add(egui::Button::new("0.4").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num5)))).clicked() {
+                &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Num5)))).clicked() {
                 need = 0.4;
             }
             if ui.add(egui::Button::new("0.35").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num6)))).clicked() {
+                &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Num6)))).clicked() {
                 need = 0.35;
             }
             if ui.add(egui::Button::new("0.3").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num7)))).clicked() {
+                &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Num7)))).clicked() {
                 need = 0.3;
             }
             if ui.add(egui::Button::new("0.25").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num8)))).clicked() {
+                &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Num8)))).clicked() {
                 need = 0.25;
             }
             if ui.add(egui::Button::new("0.2").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num9)))).clicked() {
+                &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Num9)))).clicked() {
                 need = 0.2;
             }
             if ui.add(egui::Button::new("0.1").shortcut_text(ctx.format_shortcut(
-                &egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Num0)))).clicked() {
+                &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Num0)))).clicked() {
                 need = 0.1;
             }
             if need != -2.0 {

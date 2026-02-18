@@ -7,118 +7,6 @@ use crate::ImageViewer;
 impl ImageViewer {
 
     pub fn dialogs(&mut self, ctx: &egui::Context){
-        let mut pending_action = None;
-
-        if self.show_recent_window {
-            let screen_pos = ctx.input(|i| {
-                let main_window_rect = i.viewport().outer_rect.unwrap_or(egui::Rect::EVERYTHING);
-                main_window_rect.min + egui::vec2(5.0, 57.0)
-            });
-
-            ctx.show_viewport_immediate(
-                egui::ViewportId::from_hash_of("recent_files_viewport"),
-                egui::ViewportBuilder::default()
-                    .with_title("IView - Recent Paths")
-                    .with_position(screen_pos)
-                    .with_minimize_button(false)
-                    .with_maximize_button(false)
-                    .with_resizable(false)
-                    .with_inner_size([50.0, 50.0]),
-                //.with_always_on_top(), // Legyen a főablak felett
-                |ctx, _class| {
-                    if ctx
-                        .input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::A))
-                    {
-                        self.show_recent_window = false;
-                    }
-
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                        let is_new_window = ctx.viewport_rect().width() <= 51.0;
-
-                        ui.vertical(|ui| {
-                            let mut action = None; // (ActionType, PathBuf)
-
-                            for path in &self.config.recent_files {
-                                let file_name = path
-                                    .file_name()
-                                    .map(|n| n.to_string_lossy())
-                                    .unwrap_or_default();
-                                let folder_path = path
-                                    .parent()
-                                    .map(|p| p.to_string_lossy().into_owned())
-                                    .unwrap_or_else(|| "Root".to_string());
-                                let hover_msg = format!(
-                                    "{}\n                   Clicks:\n\
-                                    Left:              -> Open\n\
-                                    Shift Left:    -> Open as ...\n\
-                                    Right:           -> Save as ...\n\
-                                    Shift+Right: -> Save View as ...",
-                                    folder_path
-                                );
-                                let button = ui.button(&*file_name);
-                                button.clone().on_hover_text(hover_msg);
-                                if button.secondary_clicked() {
-                                    if ui.input(|i| i.modifiers.shift || i.modifiers.command) {
-                                        action = Some(("SAVEVIEW_DIAL", path.clone()));
-                                    } else {
-                                        action = Some(("SAVE_DIAL", path.clone()));
-                                    }
-                                    ui.close_kind(egui::UiKind::Menu);
-                                }
-                                if button.clicked() {
-                                    if ui.input(|i| i.modifiers.shift || i.modifiers.command) {
-                                        action = Some(("OPEN_DIAL", path.clone()));
-                                    } else {
-                                        action = Some(("OPEN", path.clone()));
-                                    }
-                                    ui.close_kind(egui::UiKind::Menu);
-                                }
-                            }
-
-                            if let Some(act) = action {
-                                pending_action = Some(act);
-                                self.show_recent_window = false;
-                            }
-                        });
-
-                        if self.recent_file_modified || is_new_window {
-                            self.recent_window_size = ui.min_size().into();
-                            if self.recent_window_size.x > 1.0 {
-                                self.recent_file_modified = false;
-                                //println!("{:?}",self.recent_window_size);
-                                let new_size = egui::vec2(
-                                    self.recent_window_size.x + 15.0,
-                                    self.recent_window_size.y + 15.0,
-                                );
-                                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(new_size));
-                            }
-                        }
-                    });
-
-                    if ctx.input(|i| i.viewport().close_requested()) {
-                        self.show_recent_window = false;
-                    }
-                },
-            );
-        }
-
-        // Műveletek végrehajtása
-        if let Some((type_str, path)) = pending_action {
-            match type_str {
-                "OPEN" => self.open_image(ctx, &path, true),
-                "OPEN_DIAL" => self.open_image_dialog(ctx, &Some(path)),
-                "SAVE_DIAL" => {
-                    self.save_original = true;
-                    self.starting_save(&Some(path));
-                }
-                "SAVEVIEW_DIAL" => {
-                    self.save_original = false;
-                    self.starting_save(&Some(path));
-                }
-                _ => {}
-            }
-        }
 
         if self.show_about_window {
             ctx.show_viewport_immediate(
@@ -135,13 +23,13 @@ impl ImageViewer {
                     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                         self.show_about_window = false;
                     }
-
                     egui::CentralPanel::default().show(ctx, |ui| {
+                        self.show_about_window_focus = ctx.input(|i| i.viewport().focused == Some(true));
                         ui.vertical_centered(|ui| {
                             ui.add_space(10.0);
                             ui.heading(egui::RichText::new("IView 2026").size(30.0).strong());
                             ui.label("The high-speed Rust image viewer");
-                            ui.label("Version: 0.4.0");
+                            ui.label("Version: 0.6.0");
                             ui.separator();
 
                             ui.add_space(10.0);
@@ -205,6 +93,7 @@ impl ImageViewer {
                 .pivot(egui::Align2::CENTER_CENTER) // Középre tesszük
                 .default_pos(ctx.viewport_rect().center())
                 .show(ctx, |ui| {
+                    self.save_dialog_focus = ctx.input(|i| i.viewport().focused == Some(true));
                     match save_data.saveformat {
                         SaveFormat::Jpeg => {
                             ui.add(
@@ -262,6 +151,7 @@ impl ImageViewer {
             egui::Window::new("Image Info")
                 .open(&mut self.show_info) // Bezáró gomb (X) kezelése
                 .show(ctx, |ui| {
+                    self.show_info_focus = ctx.input(|i| i.viewport().focused == Some(true));
                     egui::Grid::new("info_grid")
                         .num_columns(2)
                         .spacing([40.0, 4.0]) // Oszlopok közötti távolság
@@ -274,7 +164,7 @@ impl ImageViewer {
                             ui.label("Size of image:");
                             ui.label(format!(
                                 "{} x {} pixel",
-                                self.image_size.x, self.image_size.y
+                                self.image_size.x * self.resize, self.image_size.y * self.resize
                             ));
                             ui.end_row();
 
@@ -413,33 +303,31 @@ impl ImageViewer {
                 });
         }
 
-        if self.color_correction_dialog {
+        if self.color_correction_dialog && !self.menvar.hided {
             let mut changed = false;
-            //let mut dialog_copy = self.color_correction_dialog;
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("colorcorrection_viewport"),
                 egui::ViewportBuilder::default()
                 .with_title("Color Correction for iView")
                 .with_inner_size([440.0, 350.0])
                 .with_resizable(false)
-                //.with_minimize_button(false)
                 .with_maximize_button(false)
                 .with_always_on_top(),
                 |ctx, _| {
                 if ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::C)) {
                     self.color_correction_dialog = false;
                     ctx.send_viewport_cmd_to( egui::ViewportId::ROOT, egui::ViewportCommand::Focus );
+                    ctx.send_viewport_cmd( egui::ViewportCommand::Focus );
+                }
+                if ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::G)) {
+                    self.bg_style = self.bg_style.clone().inc();
+                    changed = true;
                 }
                 egui::CentralPanel::default()
                 .frame(egui::Frame::default().fill(ctx.style().visuals.window_fill()).inner_margin(2.0))
                 .show( ctx, |ui| {
-                    
-            /*let mut changed = false;
-            let mut dialog_copy = self.color_correction_dialog;
-            egui::Window::new("Color corrections")
-            .open(&mut dialog_copy) // Bezáró gomb (X) kezelése
-            .resizable(false)
-            .show(ctx, |ui| {*/
+                self.color_correction_dialog_focus = ctx.input(|i| i.viewport().focused == Some(true));
+
                 ui.spacing_mut().slider_width = 300.0;
 
                  ui.horizontal(|ui| {
@@ -619,7 +507,6 @@ impl ImageViewer {
                         let (rect, _) = ui.allocate_exact_size(egui::vec2(26.0, 16.0), egui::Sense::hover());
                         let col = egui::Color32::from_rgba_unmultiplied(color[0], color[1], color[2], 255);
                         ui.painter().rect_filled(rect, 2.0, col);
-                        //ui.painter().frame(rect,1.0);
                         
                         ui.label("Red:");
                         let mut r_txt = format!("{}",color[0]);
@@ -676,10 +563,10 @@ impl ImageViewer {
                 self.settings_dirty = true;
                 self.review(ctx, true, false);
             }
-            //self.color_correction_dialog = dialog_copy;
         }
         
-        self.menvar.after_all_menus(ctx, self.act());
+
+        self.after_all_menus(ctx);
 
     }
 

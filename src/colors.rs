@@ -313,7 +313,7 @@ impl Lut4ColorSettings {
     }
 
     pub fn color_to_alpha(&self,  pixel: & mut image::Rgba<u8> ) {
-        let max_dist = self.transparency_tolerance * 255.0;
+        let max_dist = self.transparency_tolerance * 441.0;
         let dist = ((pixel[0] as f32 - self.transparent_color[0] as f32).powi(2) +
                    (pixel[1] as f32 - self.transparent_color[1] as f32).powi(2) +
                    (pixel[2] as f32 - self.transparent_color[2] as f32).powi(2)).sqrt();

@@ -30,6 +30,43 @@ pub fn label_with_shadow(ui: &mut egui::Ui, text: &str, size: f32) {
 }
 
 impl ImageViewer {
+    
+    pub fn anim_play_stop(&mut self, _ctx: &egui::Context){
+        if let Some(_anim) = &self.anim_data {
+            self.anim_playing = !self.anim_playing;
+            if self.anim_playing
+                && !self.anim_loop
+                && self.current_frame + 1 == self.total_frames
+            {
+                self.current_frame = 0;
+            }
+            self.last_frame_time = std::time::Instant::now();
+        }
+    }
+
+    pub fn anim_prev_frame(&mut self, ctx: &egui::Context){
+        if let Some(anim) = &self.anim_data {
+            self.anim_playing = false;
+            if self.current_frame == 0 {
+                self.current_frame = self.total_frames - 1;
+            } else {
+                self.current_frame -= 1;
+            }
+            self.original_image = Some(anim.anim_frames[self.current_frame].clone());
+            self.review(ctx, true, false);
+            ctx.request_repaint();
+        }
+    }
+
+    pub fn anim_next_frame(&mut self, ctx: &egui::Context){
+        if let Some(anim) = &self.anim_data {
+            self.anim_playing = false;
+            self.current_frame = (self.current_frame + 1) % self.total_frames;
+            self.original_image = Some(anim.anim_frames[self.current_frame].clone());
+            self.review(ctx, true, false);
+            ctx.request_repaint();
+        }
+    }
 
     pub fn anim_and_gpu(&mut self, ctx: &egui::Context, frame : &mut eframe::Frame){
         // Csak az első futáskor inicializálunk, amikor már van frame és GPU

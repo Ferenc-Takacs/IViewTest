@@ -1,8 +1,8 @@
 
 use std::ops::{Add,Sub,Mul,Div,AddAssign,SubAssign,MulAssign};
+use std::fmt;
 
-
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Pf32{ pub x: f32, pub y: f32, }
 impl Default for Pf32 { fn default() -> Self { Self { x: 0.0, y: 0.0 } } }
 impl Into<(f32,f32)> for Pf32 { fn into(self) -> (f32,f32) { ( self.x, self.y ) } }
@@ -17,7 +17,16 @@ impl Into<(f64,f64)> for Pf32 { fn into(self) -> (f64,f64) { ( self.x as f64, se
 impl Into<Pf32> for (f64,f64) { fn into(self) -> Pf32 { Pf32{ x:self.0 as f32, y:self.1 as f32 } } }
 impl Into<egui::Pos2> for Pf32 { fn into(self) -> egui::Pos2 { egui::Pos2{ x:self.x, y:self.y } } }
 impl Into<Pf32> for egui::Pos2 { fn into(self) -> Pf32 { Pf32{ x:self.x, y:self.y } } }
-impl Add for Pf32 { type Output = Self;
+impl fmt::Display for Pf32 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {})", self.x, self.y)
+    }
+}
+impl fmt::Debug for Pf32 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{} {}]", self.x, self.y)
+}
+}impl Add for Pf32 { type Output = Self;
     fn add(self, a: Self) -> Self { Pf32{ x: self.x + a.x, y: self.y + a.y } }
 }
 impl AddAssign for Pf32 {
@@ -52,5 +61,6 @@ impl Pf32 {
     pub fn max( self, b: Pf32 ) -> Pf32 { Pf32{ x: self.x.max(b.x), y: self.y.max(b.y) } }
     pub fn floor( self ) -> Pf32 { Pf32{ x: self.x.floor(), y: self.y.floor() } }
     pub fn even( self ) -> Pf32 { Pf32{ x: (self.x*0.5).floor()*2.0, y: (self.y*0.5).floor()*2.0 } }
+    pub fn clamp( self, a: Pf32, b: Pf32 ) -> Pf32 { Pf32{x: self.x.clamp(a.x,b.x) , y: self.y.clamp(a.y,b.y) } }
 }
 

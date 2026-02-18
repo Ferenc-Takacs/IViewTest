@@ -83,9 +83,9 @@ pub fn get_settings_path() -> PathBuf {
     if let Some(proj_dirs) = ProjectDirs::from("com", "iview", "iview-rust") {
         let config_dir = proj_dirs.config_local_dir(); // Ez az AppData/Local Windows-on
         let _ = fs::create_dir_all(config_dir);
-        return config_dir.join("settings_.json");
+        return config_dir.join("settings.json");
     }
-    PathBuf::from("settings_.json")
+    PathBuf::from("settings.json")
 }
 
 pub fn load_icon() -> egui::IconData {

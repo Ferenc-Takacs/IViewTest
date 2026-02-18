@@ -253,7 +253,7 @@ fn apply_effects(@builtin(global_invocation_id) id: vec3<u32>) {
 
 fn color_to_alpha(pixel: vec4<f32> ) -> vec4<f32> {
     var out = pixel;
-    let tolerance = f.transparency_tolerance;
+    let tolerance = f.transparency_tolerance * 1.7294;
     let dist = distance(pixel.rgb, f.transparent_color.rgb);
 
     if dist < tolerance {
