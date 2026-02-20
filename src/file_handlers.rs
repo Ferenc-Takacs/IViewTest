@@ -8,6 +8,7 @@ use image::AnimationDecoder;
 use std::io::{Read, Seek};
 use img_parts::ImageEXIF;
 use rayon::iter::{IntoParallelRefIterator,ParallelIterator};
+use std::sync::atomic::AtomicU32;
 
 use crate::exif_my::*;
 use crate::colors::*;
@@ -127,7 +128,8 @@ fn apply_modifies_to_frame(img: &mut image::DynamicImage, color_settings: &Color
         }
         else {
             if let Some(lut) = &lut {
-                lut.apply_lut(&mut rgba_image);
+                let mut hist = (0..1024).map(|_| AtomicU32::new(0)).collect::<Vec<_>>();
+                lut.apply_lut(&mut rgba_image, &mut hist);
             }
         }
     }
