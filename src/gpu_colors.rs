@@ -48,6 +48,8 @@ pub struct GpuInterface {
     pub tex_processed_lut: wgpu::Texture,
     color_params_buffer: wgpu::Buffer,
     sharpen_params_buffer: wgpu::Buffer,
+    hist_buffer: wgpu::Buffer,
+    hist_staging_buffer: wgpu::Buffer,
     sampler: wgpu::Sampler,
     bind_group_gen: wgpu::BindGroup,
     bind_group_apply_0: wgpu::BindGroup,
@@ -168,8 +170,7 @@ impl GpuInterface {
                 wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D3, multisampled: false }, count: None },
                 wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
                 wgpu::BindGroupLayoutEntry { binding: 4, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::StorageTexture { access: wgpu::StorageTextureAccess::WriteOnly, format: wgpu::TextureFormat::Rgba8Unorm, view_dimension: wgpu::TextureViewDimension::D2 }, count: None },
-                
-                //wgpu::BindGroupLayoutEntry { binding: 5, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                wgpu::BindGroupLayoutEntry { binding: 5, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage{read_only: false}, has_dynamic_offset: false, min_binding_size: None }, count: None },
             ],
         });
 
@@ -228,6 +229,21 @@ impl GpuInterface {
 
         let bg_layout_apply = pipe_apply.get_bind_group_layout(1);
 
+        let hist_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Histogram Storage"),
+            size: 256 * 4 * 4, // 256 u32 4
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let hist_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Histogram Staging"),
+            size: 256 * 4 * 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+
         // Pipeline-ok és BindGroup-ok létrehozása...
         // (Ha bármi hibázik, return None)
         Some(Self {
@@ -239,6 +255,8 @@ impl GpuInterface {
             tex_processed_lut,
             color_params_buffer,
             sharpen_params_buffer,
+            hist_buffer,
+            hist_staging_buffer,
             sampler,
             bind_group_gen, // Ezt is hozzá kell adni a struct-hoz!
             bind_group_apply_0,
@@ -305,7 +323,7 @@ impl GpuInterface {
     }
     ///////////////////////////////////////////////////////////////////////////
 
-    pub fn generate_image(&self, img_data: &mut [u8], width: u32, height: u32) {
+    pub fn generate_image(&self, img_data: &mut [u8], width: u32, height: u32, hist : &mut Vec<u32>) {
 
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
 
@@ -340,20 +358,6 @@ impl GpuInterface {
             view_formats: &[],
         });
 
-        /*let hist_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Histogram Storage"),
-            size: 256 * 4 * 4, // 256 u32 4
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        let hist_staging_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Histogram Staging"),
-            size: 256 * 4 * 4,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });*/
-
         // 4. Bind Group létrehozása a képfeldolgozáshoz
         let bind_group_apply = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Apply Bind Group"),
@@ -362,13 +366,15 @@ impl GpuInterface {
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&tex_src.create_view(&Default::default())) },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&self.tex_processed_lut.create_view(&Default::default())) },
-                wgpu::BindGroupEntry { binding: 3, resource: self.sharpen_params_buffer.as_entire_binding() }, // Feltételezve, hogy van ilyen buffer az initben
+                wgpu::BindGroupEntry { binding: 3, resource: self.sharpen_params_buffer.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&tex_out.create_view(&Default::default())) },
-                //wgpu::BindGroupEntry { binding: 5, resource: hist_buffer.as_entire_binding() }, 
+                wgpu::BindGroupEntry { binding: 5, resource: self.hist_buffer.as_entire_binding() }, 
             ],
         });
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.clear_buffer(&self.hist_buffer, 0, None);
+
         {
             let mut cpass = encoder.begin_compute_pass(&Default::default());
             cpass.set_pipeline(&self.pipe_apply);
@@ -384,7 +390,6 @@ impl GpuInterface {
             cpass.dispatch_workgroups(workgroup_x, workgroup_y, 1);
         }
         
-
 
         let width_bytes = 4 * width;
         let alignment = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT; // Ez a konstans 256
@@ -409,17 +414,23 @@ impl GpuInterface {
             size,
         );
 
-        //encoder.copy_buffer_to_buffer(&hist_buffer, 0, &hist_staging_buffer, 0, 256 * 4 * 3);
-        //queue.submit(Some(encoder.finish()));
+        encoder.copy_buffer_to_buffer(&self.hist_buffer, 0, &self.hist_staging_buffer, 0, 256 * 4 * 4);
 
         self.queue.submit(Some(encoder.finish()));
         
-        /*let hist_buffer_slice = hist_staging_buffer.slice(..);
-        hist_buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
-        let data = hist_buffer_slice.get_mapped_range();
-        let result: &[u32] = bytemuck::cast_slice(&data);
-        // ... mentsd el a result-ot a self.histogram-ba ...
-        staging_buffer.unmap();*/
+        let hist_buffer_slice = self.hist_staging_buffer.slice(..);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        hist_buffer_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+        
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+
+        if let Ok(Ok(())) = receiver.try_recv() {
+            let data = hist_buffer_slice.get_mapped_range();
+            let result: &[u32] = bytemuck::cast_slice(&data);
+            hist.copy_from_slice(result);
+            drop(data);
+            self.hist_staging_buffer.unmap();
+        }
 
         // 6. Letöltés a CPU-ra
         let buffer_slice = staging_buffer.slice(..);

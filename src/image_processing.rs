@@ -244,7 +244,8 @@ impl ImageViewer {
 
         if self.modified {
             if self.gpu_interface.is_some() {
-                self.gpu_interface.as_ref().unwrap().generate_image(rgba_image.as_mut(), width, height);
+                //self.hist = vec![0u32; 1024];
+                self.gpu_interface.as_ref().unwrap().generate_image(rgba_image.as_mut(), width, height, & mut self.hist);
                 //println!("a");
             }
             else if let Some(lut) = &self.lut {
@@ -267,7 +268,7 @@ impl ImageViewer {
             [width as usize, height as usize],
             &pixel_data,
         );
-        
+
         self.texture = Some(ctx.load_texture("kep", color_image, Default::default()));
     }
 

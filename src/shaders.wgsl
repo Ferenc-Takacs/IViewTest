@@ -165,7 +165,7 @@ struct GpuSharpenSettings {
 @group(1) @binding(2) var t_lut: texture_3d<f32>;       // A már generált 3D LUT
 @group(1) @binding(3) var<uniform> filt: GpuSharpenSettings;
 @group(1) @binding(4) var t_out: texture_storage_2d<rgba8unorm, write>;
-@group(1) @binding(5) var<storage, read_write> histogram: array<atomic<u32>, 3*256>;
+@group(1) @binding(5) var<storage, read_write> histogram: array<atomic<u32>, 4*256>;
 
 @compute @workgroup_size(16, 16)
 fn apply_effects(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -245,13 +245,13 @@ fn apply_effects(@builtin(global_invocation_id) id: vec3<u32>) {
     var corrected_rgb = textureSampleLevel(t_lut, s_linear, lut_coords, 0.0).rgb;
     
     let h_r = u32(corrected_rgb.r * 255.0);
-    atomicAdd(&histogram[h_r*4], 1u);
+    atomicAdd(&histogram[h_r], 1u);
     let h_g = u32(corrected_rgb.g * 255.0);
-    atomicAdd(&histogram[h_g*4+1], 1u);
+    atomicAdd(&histogram[h_g+256], 1u);
     let h_b = u32(corrected_rgb.b * 255.0);
-    atomicAdd(&histogram[h_b*4+2], 1u);
+    atomicAdd(&histogram[h_b+512], 1u);
     let gray = u32( dot(corrected_rgb, vec3<f32>(0.299, 0.587, 0.114)) * 255.0 );
-    atomicAdd(&histogram[gray*4+3], 1u);
+    atomicAdd(&histogram[gray+768], 1u);
     
     var final_color = vec4<f32>(corrected_rgb, original_pixel.a);
     if( filt.use_transparency > 0u ) {
